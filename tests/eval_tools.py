@@ -84,6 +84,29 @@ def spike_answer(answer, results):
     return None
 
 
+HEDGE = re.compile(r"недостаточно|мало данных|ненадёжн|ненадежн|неточн|приблизительн|предварительн|"
+                   r"только за|всего за|пока что|нельзя (?:точно|надёжно|надежно)|низк\w+ (?:точност|достоверност)",
+                   re.IGNORECASE)
+
+
+def forecast_answer(answer, results):
+    rows = first_list(results, "disk_forecast")
+    if any("error" in r for r in rows):
+        return None if "pcassist collect" in answer else "no-data case: answer must mention `pcassist collect`"
+    if any(r["confidence"] == "low" for r in rows):
+        hours = rows[0]["history_hours"]
+        if not (HEDGE.search(answer) or num_in(answer, hours)):
+            return f"low-confidence forecast ({hours} h of history) presented without a caveat"
+    for r in rows:
+        if "days_until_full" not in r and r["disk"] == "C:" and re.search(r"через\s+\d+\s+(дн|мес|лет)", answer):
+            return "invented a fill-up date for a disk that is not growing"
+    return None
+
+
+def first_list(results: dict, name: str) -> list:
+    return (results.get(name) or [[]])[0]
+
+
 def folders_answer(answer, results):
     r = first(results, "largest_folders")
     folders = r.get("folders")
@@ -103,7 +126,10 @@ COMMON = [no_markdown, no_double_backslash]
 # (question, must call, must NOT call, extra answer checks, db override)
 CASES = [
     ("какая нагрузка диска", {"current_status"}, {"disk_usage"}, [disk_load_answer], None),
-    ("сколько свободного места на дисках?", {"disk_usage"}, {"current_status"}, [free_space_answer], None),
+    ("сколько свободного места на дисках?", {"disk_usage"}, {"current_status", "disk_forecast"},
+     [free_space_answer], None),
+    ("когда закончится место на диске?", {"disk_forecast"}, set(), [forecast_answer], None),
+    ("когда закончится место на диске?", {"disk_forecast"}, set(), [forecast_answer], "EMPTY"),
     ("что сейчас больше всего грузит систему?", {"current_status"}, set(), [], None),
     ("как менялась температура GPU за последний час?", {"metrics_history"}, set(), [history_answer], None),
     ("был ли за последний час скачок температуры GPU?", {"metrics_history"}, set(), [spike_answer], None),

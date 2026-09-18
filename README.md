@@ -7,7 +7,8 @@ changes or deletes anything.
 ## Status
 - [x] Stage 1: metrics collector -> SQLite
 - [x] Stage 2: LLM tools + chat via Ollama (`qwen3:8b`)
-- [ ] Stage 3: anomaly detection, disk-fill forecast
+- [x] Stage 3a: disk-fill forecast (`disk_forecast`, needs 24+ h of history to be reliable)
+- [ ] Stage 3b: anomaly detection
 - [ ] Stage 4: dashboard / reports
 
 ## Requirements
@@ -44,7 +45,8 @@ The model answers only by calling these read-only tools:
 | `current_status` | live CPU/RAM/disk I/O/network/GPU and top processes |
 | `disk_usage` | free/used space per disk |
 | `top_processes` | heaviest processes over a recent window (from history) |
-| `metrics_history` | min/avg/max/latest of one metric over a window (from history) |
+| `metrics_history` | min/avg/max/latest, when the max happened and the change over the last 10 min (from history) |
+| `disk_forecast` | growth in GB/day and days until each disk is full (linear trend; flagged unreliable under 24 h of history) |
 | `largest_folders` | what takes the most space in a directory (scan up to ~45 s) |
 
 ## Tests
@@ -52,4 +54,5 @@ The model answers only by calling these read-only tools:
 (e.g. "disk load" -> `current_status`, "free space" -> `disk_usage`). Needs Ollama running:
 ```powershell
 python tests\eval_tools.py --runs 2   # add --slow to include the folder scan case
+python tests	est_forecast.py        # unit tests for disk_forecast, no Ollama needed
 ```

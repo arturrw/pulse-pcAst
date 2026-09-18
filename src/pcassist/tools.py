@@ -119,6 +119,57 @@ def metrics_history(metric: str, minutes: int = 60) -> dict:
     return _round(result)
 
 
+MIN_FORECAST_HOURS = 24  # below this a linear trend is mostly noise (temp files, caches)
+
+
+def _slope_per_day(points: list[tuple[float, float]]) -> float:
+    """Least-squares slope of (ts_seconds, used_gb) in GB/day."""
+    n = len(points)
+    mt = sum(t for t, _ in points) / n
+    mu = sum(u for _, u in points) / n
+    var = sum((t - mt) ** 2 for t, _ in points)
+    if var == 0:
+        return 0.0
+    return sum((t - mt) * (u - mu) for t, u in points) / var * 86400
+
+
+def disk_forecast(days: int = 30) -> list[dict]:
+    """Forecast when each disk will fill up, from the trend in collected history
+    (growth in GB/day and days until full). Check `confidence`: with under 24 hours of
+    history the estimate is unreliable, say so.
+
+    Args:
+        days: How many days of history to fit the trend on.
+    """
+    since = time.time() - int(days) * 86400
+    out = []
+    with db.connect(_db_path) as conn:
+        mounts = [m for (m,) in conn.execute("SELECT DISTINCT mount FROM disk_usage WHERE ts >= ?", (since,))]
+        for mount in sorted(mounts):
+            pts = conn.execute("SELECT ts, used_gb, total_gb FROM disk_usage WHERE mount = ? AND ts >= ? ORDER BY ts",
+                               (mount, since)).fetchall()
+            hours = (pts[-1][0] - pts[0][0]) / 3600
+            used, total = pts[-1][1], pts[-1][2]
+            row = {"disk": mount.rstrip("\\"), "used_gb": used, "free_gb": total - used,
+                   "history_hours": hours, "confidence": "ok" if hours >= MIN_FORECAST_HOURS else "low"}
+            if len(pts) < 2 or hours <= 0:
+                row["note"] = "not enough samples for a trend"
+            else:
+                rate = _slope_per_day([(t, u) for t, u, _ in pts])
+                row["growth_gb_per_day"] = rate
+                if rate > 0.01:
+                    row["days_until_full"] = (total - used) / rate
+                else:
+                    row["note"] = "usage is not growing, no fill-up expected"
+            if row["confidence"] == "low":
+                row["warning"] = (f"only {hours:.1f} h of history (need {MIN_FORECAST_HOURS}+ h); "
+                                  "tell the user this estimate is unreliable")
+            out.append(_round(row))
+    if not out:
+        return [{"error": "no collected data in this window; run `pcassist collect`"}]
+    return out
+
+
 def largest_folders(path: str = "C:\\", limit: int = 10) -> dict:
     """Find which subfolders of a directory take the most disk space (read-only scan, up to ~45 s).
     Use it to answer 'what is filling my disk?'. Drill down by calling it again on a big subfolder.
@@ -134,5 +185,5 @@ def largest_folders(path: str = "C:\\", limit: int = 10) -> dict:
     return r
 
 
-TOOLS = [current_status, disk_usage, top_processes, metrics_history, largest_folders]
+TOOLS = [current_status, disk_usage, top_processes, metrics_history, disk_forecast, largest_folders]
 TOOL_MAP = {f.__name__: f for f in TOOLS}

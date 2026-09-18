@@ -67,5 +67,5 @@ The model answers only by calling these read-only tools:
 ```powershell
 python tests\eval_tools.py --runs 2   # add --slow to include the folder scan case
 python tests\test_forecast.py        # unit tests for disk_forecast, no Ollama needed
-python tests	est_prune.py           # unit tests for history cleanup
+python tests\test_prune.py           # unit tests for history cleanup
 ```

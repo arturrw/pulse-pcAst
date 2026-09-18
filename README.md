@@ -37,6 +37,17 @@ Metrics go to `data/metrics.db` (override with `--db`). Questions about history
 ("how did GPU temperature change over the last hour?") need `pcassist collect` to have run
 for a while; without data the assistant tells you to start it.
 
+## Background collection (autostart)
+History-based answers (and a reliable `disk_forecast`, 24+ h) need `collect` running all the time.
+A Task Scheduler job starts it hidden at every logon (no admin rights needed; no console window;
+no 72 h time limit; runs on battery; restarts up to 3 times if it crashes):
+```powershell
+powershell -File scripts\autostart.ps1 install   # register and start now
+powershell -File scripts\autostart.ps1 status
+powershell -File scripts\autostart.ps1 remove    # stop and unregister
+```
+Data stays in `data/metrics.db` (~10-15 MB/day at the default 30 s interval; nothing is pruned yet).
+
 ## Chat tools
 The model answers only by calling these read-only tools:
 

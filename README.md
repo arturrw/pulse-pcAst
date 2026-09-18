@@ -46,7 +46,8 @@ powershell -File scripts\autostart.ps1 install   # register and start now
 powershell -File scripts\autostart.ps1 status
 powershell -File scripts\autostart.ps1 remove    # stop and unregister
 ```
-Data stays in `data/metrics.db` (roughly 5-10 MB/day, measured from the first samples at the default 30 s interval; nothing is pruned yet).
+Data stays in `data/metrics.db` (roughly 5-10 MB/day, measured from the first samples at the default 30 s interval; history older than 90 days is deleted automatically, change with `collect --keep-days N`, 0 = keep all).
+Manual cleanup and file shrink: `pcassist prune --days 30`.
 
 ## Chat tools
 The model answers only by calling these read-only tools:
@@ -66,4 +67,5 @@ The model answers only by calling these read-only tools:
 ```powershell
 python tests\eval_tools.py --runs 2   # add --slow to include the folder scan case
 python tests\test_forecast.py        # unit tests for disk_forecast, no Ollama needed
+python tests	est_prune.py           # unit tests for history cleanup
 ```

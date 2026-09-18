@@ -25,8 +25,14 @@ def cmd_collect(args: argparse.Namespace) -> None:
     conn = db.connect(args.db)
     collector = Collector()
     print(f"Writing to {args.db}. Ctrl+C to stop.")
+    last_prune = 0.0
     try:
         while True:
+            if args.keep_days and time.time() - last_prune >= 86400:
+                removed = db.prune(conn, args.keep_days)
+                last_prune = time.time()
+                if removed:
+                    print(f"Pruned {removed} rows older than {args.keep_days} days.")
             sample = collector.sample()
             db.save_sample(conn, sample)
             _print_sample(sample)
@@ -35,6 +41,13 @@ def cmd_collect(args: argparse.Namespace) -> None:
             time.sleep(max(args.interval - 1, 0))
     except KeyboardInterrupt:
         print("Stopped.")
+
+
+def cmd_prune(args: argparse.Namespace) -> None:
+    conn = db.connect(args.db)
+    removed = db.prune(conn, args.days)
+    conn.execute("VACUUM")  # give the freed space back to the file system
+    print(f"Removed {removed} rows older than {args.days} days.")
 
 
 def cmd_scan(args: argparse.Namespace) -> None:
@@ -63,8 +76,15 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("collect", help="collect metrics into SQLite")
     c.add_argument("--interval", type=int, default=30, help="seconds between samples")
     c.add_argument("--once", action="store_true", help="take one sample and exit")
+    c.add_argument("--keep-days", type=int, default=90,
+                   help="delete history older than this many days (checked at start and daily; 0 = keep all)")
     c.add_argument("--db", default=str(db.DEFAULT_DB))
     c.set_defaults(func=cmd_collect)
+
+    pr = sub.add_parser("prune", help="delete history older than N days and shrink the database file")
+    pr.add_argument("--days", type=int, default=90)
+    pr.add_argument("--db", default=str(db.DEFAULT_DB))
+    pr.set_defaults(func=cmd_prune)
 
     sc = sub.add_parser("scan", help="show the largest subfolders of a directory (read-only)")
     sc.add_argument("path", nargs="?", default="C:\\")

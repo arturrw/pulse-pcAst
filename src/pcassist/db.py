@@ -1,4 +1,5 @@
 import sqlite3
+import time
 from pathlib import Path
 
 DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "metrics.db"
@@ -62,6 +63,19 @@ def _insert(conn: sqlite3.Connection, table: str, rows: list[dict]) -> None:
     cols = list(rows[0])
     sql = f"INSERT OR REPLACE INTO {table} ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})"
     conn.executemany(sql, [tuple(r[c] for c in cols) for r in rows])
+
+
+TABLES = ("system_metrics", "gpu_metrics", "process_snapshots", "disk_usage")
+
+
+def prune(conn: sqlite3.Connection, keep_days: float, now: float | None = None) -> int:
+    """Delete rows older than keep_days from every table. Returns the number of rows removed."""
+    cutoff = (time.time() if now is None else now) - keep_days * 86400
+    removed = 0
+    for table in TABLES:
+        removed += conn.execute(f"DELETE FROM {table} WHERE ts < ?", (cutoff,)).rowcount
+    conn.commit()
+    return removed
 
 
 def save_sample(conn: sqlite3.Connection, sample: dict) -> None:

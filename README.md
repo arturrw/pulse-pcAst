@@ -54,5 +54,5 @@ The model answers only by calling these read-only tools:
 (e.g. "disk load" -> `current_status`, "free space" -> `disk_usage`). Needs Ollama running:
 ```powershell
 python tests\eval_tools.py --runs 2   # add --slow to include the folder scan case
-python tests	est_forecast.py        # unit tests for disk_forecast, no Ollama needed
+python tests\test_forecast.py        # unit tests for disk_forecast, no Ollama needed
 ```

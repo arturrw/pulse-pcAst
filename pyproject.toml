@@ -1,0 +1,20 @@
+[project]
+name = "pcassist"
+version = "0.1.0"
+description = "Local AI assistant that analyzes the state of your own computer"
+requires-python = ">=3.10"
+dependencies = [
+    "psutil>=6.0",
+    "nvidia-ml-py>=12.0",
+    "ollama>=0.5",
+]
+
+[project.scripts]
+pcassist = "pcassist.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

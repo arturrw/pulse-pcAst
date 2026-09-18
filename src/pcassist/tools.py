@@ -1,0 +1,114 @@
+"""Read-only tools the LLM can call. Docstrings double as the tool descriptions."""
+import time
+
+from . import db, scan
+from .collectors import Collector, collect_disks
+
+_db_path = db.DEFAULT_DB
+
+# metric name -> (table, column). Whitelist: names come from the model, never interpolate raw input.
+METRICS = {
+    "cpu_percent": ("system_metrics", "cpu_percent"),
+    "ram_percent": ("system_metrics", "ram_percent"),
+    "ram_used_mb": ("system_metrics", "ram_used_mb"),
+    "swap_percent": ("system_metrics", "swap_percent"),
+    "disk_read_mbps": ("system_metrics", "disk_read_mbps"),
+    "disk_write_mbps": ("system_metrics", "disk_write_mbps"),
+    "net_sent_kbps": ("system_metrics", "net_sent_kbps"),
+    "net_recv_kbps": ("system_metrics", "net_recv_kbps"),
+    "gpu_util_percent": ("gpu_metrics", "util_percent"),
+    "gpu_mem_used_mb": ("gpu_metrics", "mem_used_mb"),
+    "gpu_temp_c": ("gpu_metrics", "temp_c"),
+    "gpu_power_w": ("gpu_metrics", "power_w"),
+}
+
+
+def set_db(path) -> None:
+    global _db_path
+    _db_path = path
+
+
+def _round(d: dict) -> dict:
+    return {k: round(v, 1) if isinstance(v, float) else v for k, v in d.items()}
+
+
+def current_status() -> dict:
+    """Take a live snapshot of the computer right now: CPU, RAM, disk and network rates,
+    GPU load/VRAM/temperature/power, and the top processes by CPU and memory."""
+    s = Collector().sample()
+    procs = s["processes"]
+    return {
+        "system": _round({k: v for k, v in s["system"].items() if k != "ts"}),
+        "gpus": [_round({k: v for k, v in g.items() if k not in ("ts", "idx")}) for g in s["gpus"]],
+        "top_by_cpu": [_round({"name": p["name"], "pid": p["pid"], "cpu_percent": p["cpu_percent"], "rss_mb": p["rss_mb"]})
+                       for p in sorted(procs, key=lambda p: p["cpu_percent"], reverse=True)[:8]],
+        "top_by_memory": [_round({"name": p["name"], "pid": p["pid"], "cpu_percent": p["cpu_percent"], "rss_mb": p["rss_mb"]})
+                          for p in sorted(procs, key=lambda p: p["rss_mb"], reverse=True)[:8]],
+    }
+
+
+def disk_usage() -> list[dict]:
+    """Report total and used space for every disk/partition, in GB."""
+    return [_round({"disk": d["mount"].rstrip("\\"), "total_gb": d["total_gb"], "used_gb": d["used_gb"],
+                    "free_gb": d["total_gb"] - d["used_gb"],
+                    "used_percent": 100 * d["used_gb"] / d["total_gb"] if d["total_gb"] else 0})
+            for d in collect_disks(time.time())]
+
+
+def top_processes(sort_by: str = "cpu", minutes: int = 10, limit: int = 10) -> list[dict]:
+    """List the heaviest processes over a recent time window, from collected history.
+
+    Args:
+        sort_by: 'cpu' (average CPU percent) or 'memory' (peak RAM in MB).
+        minutes: How many minutes of history to look at.
+        limit: Maximum number of processes to return.
+    """
+    order = "AVG(cpu_percent)" if sort_by == "cpu" else "MAX(rss_mb)"
+    since = time.time() - int(minutes) * 60
+    with db.connect(_db_path) as conn:
+        rows = conn.execute(
+            f"""SELECT name, AVG(cpu_percent), MAX(rss_mb), COUNT(*)
+                FROM process_snapshots WHERE ts >= ? AND pid != 0 GROUP BY name
+                ORDER BY {order} DESC LIMIT ?""",
+            (since, int(limit)),
+        ).fetchall()
+    return [_round({"name": n, "avg_cpu_percent": c, "max_rss_mb": m, "samples": k}) for n, c, m, k in rows]
+
+
+def metrics_history(metric: str, minutes: int = 60) -> dict:
+    """Summarize one metric over a recent time window from collected history (min, avg, max, latest).
+
+    Args:
+        metric: One of cpu_percent, ram_percent, ram_used_mb, swap_percent, disk_read_mbps,
+            disk_write_mbps, net_sent_kbps, net_recv_kbps, gpu_util_percent, gpu_mem_used_mb,
+            gpu_temp_c, gpu_power_w.
+        minutes: How many minutes of history to look at.
+    """
+    if metric not in METRICS:
+        return {"error": f"unknown metric '{metric}'", "available": sorted(METRICS)}
+    table, col = METRICS[metric]
+    since = time.time() - int(minutes) * 60
+    with db.connect(_db_path) as conn:
+        n, lo, avg, hi = conn.execute(
+            f"SELECT COUNT({col}), MIN({col}), AVG({col}), MAX({col}) FROM {table} WHERE ts >= ?", (since,)
+        ).fetchone()
+        last = conn.execute(f"SELECT {col} FROM {table} ORDER BY ts DESC LIMIT 1").fetchone()
+    if not n:
+        return {"metric": metric, "error": "no collected data in this window; run `pcassist collect`"}
+    return _round({"metric": metric, "minutes": int(minutes), "samples": n, "min": lo, "avg": avg,
+                   "max": hi, "latest": last[0]})
+
+
+def largest_folders(path: str = "C:\\", limit: int = 10) -> dict:
+    """Find which subfolders of a directory take the most disk space (read-only scan, up to ~45 s).
+    Use it to answer 'what is filling my disk?'. Drill down by calling it again on a big subfolder.
+
+    Args:
+        path: Directory to scan, e.g. 'C:\\' or 'C:\\Users'.
+        limit: How many of the largest subfolders to return.
+    """
+    return scan.largest_children(path, int(limit))
+
+
+TOOLS = [current_status, disk_usage, top_processes, metrics_history, largest_folders]
+TOOL_MAP = {f.__name__: f for f in TOOLS}

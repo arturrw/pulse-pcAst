@@ -12,12 +12,19 @@ switch ($Action) {
     'install' {
         if (-not (Test-Path $Pythonw)) { throw "Not found: $Pythonw (create .venv and run: pip install -e .)" }
         $act = New-ScheduledTaskAction -Execute $Pythonw -Argument '-m pcassist collect --interval 30' -WorkingDirectory $Root
-        $trg = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        # Trigger 1 starts it at logon. Trigger 2 is a watchdog firing every 5 min from now on: while the
+        # collector runs, IgnoreNew makes it a no-op; if the process died (crash, killed) it comes back.
+        # (Task Scheduler's "restart on failure" does not cover a killed process, and a repetition attached
+        # to the logon trigger only starts counting at the next logon, hence a separate time trigger.)
+        $trg = @(
+            New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+            New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5) `
+                -RepetitionDuration (New-TimeSpan -Days 3650)
+        )
         $set = New-ScheduledTaskSettingsSet `
             -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
             -ExecutionTimeLimit ([TimeSpan]::Zero) `
             -MultipleInstances IgnoreNew `
-            -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) `
             -StartWhenAvailable
         Register-ScheduledTask -TaskName $TaskName -Action $act -Trigger $trg -Settings $set `
             -Description 'pcassist background metrics collector' -Force | Out-Null

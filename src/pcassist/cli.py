@@ -26,6 +26,7 @@ def cmd_collect(args: argparse.Namespace) -> None:
     collector = Collector()
     print(f"Writing to {args.db}. Ctrl+C to stop.")
     last_prune = 0.0
+    failures = 0
     try:
         while True:
             if args.keep_days and time.time() - last_prune >= 86400:
@@ -33,9 +34,20 @@ def cmd_collect(args: argparse.Namespace) -> None:
                 last_prune = time.time()
                 if removed:
                     print(f"Pruned {removed} rows older than {args.keep_days} days.")
-            sample = collector.sample()
-            db.save_sample(conn, sample)
-            _print_sample(sample)
+            try:
+                sample = collector.sample()
+                db.save_sample(conn, sample)
+                _print_sample(sample)
+                failures = 0
+            except Exception as e:
+                # Long-running background job: one bad sample (NVML hiccup, locked DB) must not kill it.
+                # After repeated failures exit, so the autostart watchdog starts a fresh process.
+                if args.once:
+                    raise
+                failures += 1
+                print(f"Sample failed ({failures}/10): {type(e).__name__}: {e}")
+                if failures >= 10:
+                    raise
             if args.once:
                 break
             time.sleep(max(args.interval - 1, 0))

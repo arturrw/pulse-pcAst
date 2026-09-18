@@ -40,7 +40,8 @@ for a while; without data the assistant tells you to start it.
 ## Background collection (autostart)
 History-based answers (and a reliable `disk_forecast`, 24+ h) need `collect` running all the time.
 A Task Scheduler job starts it hidden at every logon (no admin rights needed; no console window;
-no 72 h time limit; runs on battery; restarts up to 3 times if it crashes):
+no 72 h time limit; runs on battery; a watchdog trigger re-launches it every 5 min if the process died,
+while a running collector makes that a no-op):
 ```powershell
 powershell -File scripts\autostart.ps1 install   # register and start now
 powershell -File scripts\autostart.ps1 status
@@ -68,4 +69,5 @@ The model answers only by calling these read-only tools:
 python tests\eval_tools.py --runs 2   # add --slow to include the folder scan case
 python tests\test_forecast.py        # unit tests for disk_forecast, no Ollama needed
 python tests\test_prune.py           # unit tests for history cleanup
+python tests\test_collect_loop.py   # collector survives bad samples
 ```

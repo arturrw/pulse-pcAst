@@ -33,7 +33,8 @@ def _round(d: dict) -> dict:
 
 
 def current_status() -> dict:
-    """Take a live snapshot of the computer right now: CPU, RAM, disk and network rates,
+    """Take a live snapshot of the computer right now: CPU, RAM, disk I/O activity
+    (read/write MB/s - this is disk "load", not free space) and network rates,
     GPU load/VRAM/temperature/power, and the top processes by CPU and memory."""
     s = Collector().sample()
     procs = s["processes"]
@@ -48,7 +49,8 @@ def current_status() -> dict:
 
 
 def disk_usage() -> list[dict]:
-    """Report total and used space for every disk/partition, in GB."""
+    """Report free/used/total space for every disk/partition, in GB (storage capacity,
+    not disk I/O activity - use current_status for read/write load)."""
     return [_round({"disk": d["mount"].rstrip("\\"), "total_gb": d["total_gb"], "used_gb": d["used_gb"],
                     "free_gb": d["total_gb"] - d["used_gb"],
                     "used_percent": 100 * d["used_gb"] / d["total_gb"] if d["total_gb"] else 0})
@@ -89,14 +91,22 @@ def metrics_history(metric: str, minutes: int = 60) -> dict:
     table, col = METRICS[metric]
     since = time.time() - int(minutes) * 60
     with db.connect(_db_path) as conn:
-        n, lo, avg, hi = conn.execute(
-            f"SELECT COUNT({col}), MIN({col}), AVG({col}), MAX({col}) FROM {table} WHERE ts >= ?", (since,)
+        n, lo, avg, hi, first_ts, last_ts = conn.execute(
+            f"SELECT COUNT({col}), MIN({col}), AVG({col}), MAX({col}), MIN(ts), MAX(ts) FROM {table} WHERE ts >= ?",
+            (since,),
         ).fetchone()
         last = conn.execute(f"SELECT {col} FROM {table} ORDER BY ts DESC LIMIT 1").fetchone()
     if not n:
         return {"metric": metric, "error": "no collected data in this window; run `pcassist collect`"}
-    return _round({"metric": metric, "minutes": int(minutes), "samples": n, "min": lo, "avg": avg,
-                   "max": hi, "latest": last[0]})
+    covers = (last_ts - first_ts) / 60
+    result = {"metric": metric, "minutes": int(minutes), "samples": n,
+              "data_covers_minutes": covers,
+              "newest_sample_minutes_ago": (time.time() - last_ts) / 60,
+              "min": lo, "avg": avg, "max": hi, "latest": last[0]}
+    if covers < int(minutes) * 0.5:
+        result["warning"] = (f"collected data covers only ~{covers:.0f} min of the requested {int(minutes)} min; "
+                             "tell the user the summary is for that shorter period only")
+    return _round(result)
 
 
 def largest_folders(path: str = "C:\\", limit: int = 10) -> dict:

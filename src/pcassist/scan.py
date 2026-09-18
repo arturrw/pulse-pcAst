@@ -1,5 +1,6 @@
 """Read-only folder size scanner. Never modifies, moves or deletes anything."""
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -32,8 +33,14 @@ def _dir_size(root: str, deadline: float) -> tuple[int, bool]:
     return total, True
 
 
+_BARE_DRIVE = re.compile(r"^[A-Za-z]:$")
+
+
 def largest_children(path: str, limit: int = 10, max_seconds: int = 45) -> dict:
     """Sizes of the immediate subfolders (and loose files) of `path`, largest first."""
+    if _BARE_DRIVE.match(path):
+        # "C:" means "current directory on drive C" to Windows, not the drive root; anchor it.
+        path += "\\"
     root = Path(path)
     if not root.is_dir():
         return {"error": f"'{path}' is not a directory"}

@@ -1,4 +1,5 @@
 """Chat loop: a local Ollama model that answers by calling the read-only tools."""
+import inspect
 import json
 import re
 
@@ -22,6 +23,8 @@ Rules:
 - You are read-only: you cannot change anything. If a fix is useful, suggest a command or step for the
   user to run themselves and say clearly that you did not run it.
 - If history tools report no data, tell the user to run `pcassist collect`.
+- History results include data_covers_minutes and newest_sample_minutes_ago. If data_covers_minutes is
+  much smaller than the requested window, say plainly that data exists only for that many minutes.
 - Machine: NVIDIA RTX 3070 Ti with 8 GB VRAM.
 - Reminder: reply in the user's language, plain text, no markdown."""
 
@@ -47,6 +50,10 @@ def _call_tool(name: str, args: dict) -> str:
     fn = TOOL_MAP.get(name)
     if fn is None:
         return json.dumps({"error": f"unknown tool '{name}'"})
+    # Some models invent placeholder arguments for zero/partial-arg tools (e.g. object=null);
+    # drop anything the function doesn't actually accept rather than erroring and burning a round.
+    accepted = inspect.signature(fn).parameters
+    args = {k: v for k, v in args.items() if k in accepted}
     try:
         return json.dumps(fn(**args), ensure_ascii=False)
     except Exception as e:  # bad arguments from the model, DB problems, etc.

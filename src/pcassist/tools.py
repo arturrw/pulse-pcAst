@@ -117,7 +117,11 @@ def largest_folders(path: str = "C:\\", limit: int = 10) -> dict:
         path: Directory to scan, e.g. 'C:\\' or 'C:\\Users'.
         limit: How many of the largest subfolders to return.
     """
-    return scan.largest_children(path, int(limit))
+    r = scan.largest_children(path, int(limit))
+    if "loose_files_gb" in r:
+        # Unambiguous name: the model otherwise reads "loose files" as a headline number.
+        r["files_directly_in_this_folder_gb"] = r.pop("loose_files_gb")
+    return r
 
 
 TOOLS = [current_status, disk_usage, top_processes, metrics_history, largest_folders]

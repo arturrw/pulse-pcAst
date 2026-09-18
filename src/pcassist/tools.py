@@ -96,13 +96,23 @@ def metrics_history(metric: str, minutes: int = 60) -> dict:
             (since,),
         ).fetchone()
         last = conn.execute(f"SELECT {col} FROM {table} ORDER BY ts DESC LIMIT 1").fetchone()
+        if n:
+            peak_ts = conn.execute(
+                f"SELECT ts FROM {table} WHERE ts >= ? AND {col} = ? ORDER BY ts DESC LIMIT 1", (since, hi)
+            ).fetchone()[0]
+            recent = conn.execute(
+                f"SELECT ts, {col} FROM {table} WHERE ts >= ? ORDER BY ts LIMIT 1", (max(since, last_ts - 600),)
+            ).fetchone()
     if not n:
         return {"metric": metric, "error": "no collected data in this window; run `pcassist collect`"}
     covers = (last_ts - first_ts) / 60
     result = {"metric": metric, "minutes": int(minutes), "samples": n,
               "data_covers_minutes": covers,
               "newest_sample_minutes_ago": (time.time() - last_ts) / 60,
-              "min": lo, "avg": avg, "max": hi, "latest": last[0]}
+              "min": lo, "avg": avg, "max": hi, "max_was_minutes_ago": (time.time() - peak_ts) / 60,
+              "latest": last[0]}
+    if recent[0] < last_ts:
+        result["change_over_last_10_min"] = last[0] - recent[1]
     if covers < int(minutes) * 0.5:
         result["warning"] = (f"collected data covers only ~{covers:.0f} min of the requested {int(minutes)} min; "
                              "tell the user the summary is for that shorter period only")

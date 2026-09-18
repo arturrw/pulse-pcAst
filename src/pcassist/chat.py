@@ -27,6 +27,10 @@ Rules:
 - If history tools report no data, tell the user to run `pcassist collect`.
 - History results include data_covers_minutes and newest_sample_minutes_ago. If data_covers_minutes is
   much smaller than the requested window, say plainly that data exists only for that many minutes.
+- metrics_history knows only min, avg, max, when the max happened (max_was_minutes_ago), the latest value
+  and the change over the last 10 minutes. Call the max a "максимум" and say when it happened; never call
+  it a "скачок"/spike unless max is far above avg, and then state both numbers. "latest" is simply the
+  most recent measured value. Do not invent details the tool did not return.
 - Machine: NVIDIA RTX 3070 Ti with 8 GB VRAM.
 - Reminder: reply in the user's language, plain text, no markdown."""
 

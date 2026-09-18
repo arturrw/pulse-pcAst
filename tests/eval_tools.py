@@ -63,11 +63,24 @@ def history_answer(answer, results):
     r = first(results, "metrics_history")
     if "error" in r:
         return None if "pcassist collect" in answer else "no-data case: answer must mention `pcassist collect`"
-    for key in ("min", "max", "latest"):
+    for key in ("min", "max"):
         if not num_in(answer, r[key]):
             return f"{key}={r[key]} not in answer"
+    if not (num_in(answer, r["latest"]) or num_in(answer, r["avg"])):
+        return f"neither latest={r['latest']} nor avg={r['avg']} in answer"
     if "warning" in r and not num_in(answer, r["data_covers_minutes"]):
         return f"short history ({r['data_covers_minutes']} min) not stated in answer"
+    return None
+
+
+def spike_answer(answer, results):
+    """'Was there a spike?' must be answered with max AND avg/when, not a bare max called a jump."""
+    r = first(results, "metrics_history")
+    if "error" in r:
+        return history_answer(answer, results)
+    for key in ("max", "avg", "max_was_minutes_ago"):
+        if not num_in(answer, r[key]):
+            return f"{key}={r[key]} not in answer"
     return None
 
 
@@ -93,6 +106,7 @@ CASES = [
     ("сколько свободного места на дисках?", {"disk_usage"}, {"current_status"}, [free_space_answer], None),
     ("что сейчас больше всего грузит систему?", {"current_status"}, set(), [], None),
     ("как менялась температура GPU за последний час?", {"metrics_history"}, set(), [history_answer], None),
+    ("был ли за последний час скачок температуры GPU?", {"metrics_history"}, set(), [spike_answer], None),
     ("какие процессы грузили процессор за последние 10 минут?", {"top_processes"}, set(), [], None),
     ("какая сейчас температура видеокарты?", {"current_status"}, {"metrics_history"}, [], None),
     ("как менялась температура GPU за последний час?", {"metrics_history"}, set(), [history_answer], "EMPTY"),

@@ -23,6 +23,8 @@ $All = [ordered]@{
     dynOff  = @{ 'setting.videocfg_dynamic_shadows' = '0' }
     aoOff   = @{ 'setting.videocfg_ao_detail' = '0' }
     shaderL = @{ 'setting.shaderquality' = '0' }
+    shadowShaderL = @{ 'setting.videocfg_shadow_quality' = '0'; 'setting.shaderquality' = '0' }
+    res1080 = @{ 'setting.defaultres' = '1920'; 'setting.defaultresheight' = '1080' }   # resolution-bound? (base is 1440p)
     floor   = @{ 'setting.msaa_samples' = '0'; 'setting.videocfg_shadow_quality' = '0'; 'setting.videocfg_dynamic_shadows' = '0'
                  'setting.videocfg_ao_detail' = '0'; 'setting.shaderquality' = '0' }   # everything cheap: is there any headroom at all?
 }
@@ -45,4 +47,4 @@ foreach ($v in $Only) {
 }
 
 Write-Host "`n=== Summary ($Tag) ==="
-& $Python -m pcassist session summary (Join-Path $Root "data\bench") --tag $Tag --process cs2.exe
+& $Python -m pcassist session summary (Join-Path $Root "data\bench") --tag $Tag --process cs2.exe --slices

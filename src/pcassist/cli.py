@@ -104,7 +104,7 @@ def cmd_session(args: argparse.Namespace) -> None:
         print(games.format_report(_analyze(args.presentmon, args.hml, args)))
     elif args.session_cmd == "summary":
         paths = sorted(Path(args.folder).glob(f"{args.tag}_*.csv"))
-        print(games.summarize_runs(paths, args.process))
+        print(games.summarize_runs(paths, args.process, args.slices))
     else:
         a = _analyze(args.before, args.hml_before, args)
         b = _analyze(args.after, args.hml_after, args)
@@ -158,6 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     sm.add_argument("folder")
     sm.add_argument("--tag", required=True)
     sm.add_argument("--process", default=None)
+    sm.add_argument("--slices", action="store_true", help="also FPS per 10 s of the route, per variant")
     for p_ in (rep, cmp_):
         p_.add_argument("--process", default=None, help="only frames of this exe, e.g. cs2.exe")
         p_.add_argument("--pm-offset-hours", type=float, default=None,

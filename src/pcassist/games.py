@@ -131,6 +131,16 @@ def frame_stats(frames: list[dict]) -> dict:
     }
 
 
+def slice_fps(frames: list[dict], start: datetime, seconds: int = 10) -> list[float]:
+    """Average FPS in consecutive `seconds`-long slices of the window (a fixed benchmark route: same slice = same place)."""
+    n_ms: dict[int, list[float]] = defaultdict(lambda: [0, 0.0])
+    for f in frames:
+        b = n_ms[int((f["t"] - start).total_seconds() // seconds)]
+        b[0] += 1
+        b[1] += f["ft"]
+    return [1000 * n / ms for _, (n, ms) in sorted(n_ms.items())]
+
+
 def bottleneck(frames: list[dict]) -> dict | None:
     """Share of frames where the GPU / the CPU was busy for most of the frame time.
     None if PresentMon gave no busy times."""
@@ -254,6 +264,7 @@ def analyze(pm_csv, hml=None, process: str | None = None, start: datetime | time
         "window": {"start": start, "end": end, "auto": auto},
         "time_offset_hours": offset_hours if samples else None,
         "frames": frame_stats(play),
+        "slices": slice_fps(play, start),
         "bottleneck": bottleneck(play),
         "hitches": hitches(play, samples),
         "hardware": hw,
@@ -340,16 +351,19 @@ def format_compare(a: dict, b: dict) -> str:
     return "\n".join(lines)
 
 
-def summarize_runs(paths, process: str | None = None) -> str:
+def summarize_runs(paths, process: str | None = None, by_slice: bool = False) -> str:
     """Table of repeated runs grouped by variant. File names are <tag>_<variant>_<n>.csv;
     the spread (max - min over repeats) shows whether a difference between variants is real."""
     groups: dict[str, list[dict]] = {}
+    slices: dict[str, list[list[float]]] = {}
     for p in sorted(paths):
         stem = Path(p).stem
         parts = stem.split("_")
         variant = parts[-2] if len(parts) >= 3 and parts[-1].isdigit() else stem
         try:
-            groups.setdefault(variant, []).append(analyze(p, process=process)["frames"])
+            r = analyze(p, process=process)
+            groups.setdefault(variant, []).append(r["frames"])
+            slices.setdefault(variant, []).append(r["slices"])
         except (OSError, ValueError):
             continue
     if not groups:
@@ -360,4 +374,15 @@ def summarize_runs(paths, process: str | None = None) -> str:
         mean = lambda k: sum(f[k] for f in fs) / len(fs)
         rows.append(f"{v:<12}{len(fs):>5}{sum(avg) / len(avg):>10.1f}{max(avg) - min(avg):>9.1f}"
                     f"{mean('low1_fps'):>10.1f}{mean('low01_fps'):>10.1f}{mean('p99_ms'):>8.2f}")
+    if by_slice:
+        n = min(len(x) for runs in slices.values() for x in runs) - 1   # the last slice is usually partial
+        rows += ["", "avg FPS per 10 s of the route (mean over repeats); 2nd line: % vs base",
+                 f"{'variant':<12}" + "".join(f"{i * 10:>6}s" for i in range(n))]
+        mean_by = {v: [sum(x[i] for x in runs) / len(runs) for i in range(n)] for v, runs in slices.items()}
+        ref_v = "base" if "base" in mean_by else next(iter(mean_by))
+        ref = mean_by[ref_v]
+        for v, m in mean_by.items():
+            rows.append(f"{v:<12}" + "".join(f"{x:>7.0f}" for x in m))
+            if v != ref_v:
+                rows.append(f"{'':<12}" + "".join(f"{100 * (x / r - 1):>+7.0f}" for x, r in zip(m, ref)))
     return "\n".join(rows)

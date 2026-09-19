@@ -9,7 +9,7 @@ param(
     [string]$Name = ("bench_" + (Get-Date -Format "yyyyMMdd_HHmmss")),
     [hashtable]$Set = @{},
     [string]$MapId = "3240880604",
-    [string]$MapName = "benchmark_mainmap",
+    [string]$MapName = "de_dust2",   # what the Play > Workshop menu loads; its cfg pulls in the benchmark setup
     [int]$TimeoutMin = 10,
     [switch]$KeepSettings
 )
@@ -89,10 +89,11 @@ try {
         Start-Sleep -Seconds 3
         if ((Test-Path $log) -and (Select-String -Path $log -Pattern "VProfLite stopped" -Quiet -ErrorAction SilentlyContinue)) { $done = $true; break }
     }
-    if (-not $done) { throw "no VProf report in console.log (the benchmark may not start by itself, or the map name is wrong)" }
+    if (-not $done) { throw "no VProf report in console.log (the benchmark did not start by itself, or the map failed to load)" }
     Start-Sleep -Seconds 3
     $lines = Get-Content $log
     $stopLine = $lines | Select-String "^(\d\d/\d\d \d\d:\d\d:\d\d) \[VProf\] VProfLite stopped" | Select-Object -Last 1
+    $startLine = $lines | Select-String "^(\d\d/\d\d \d\d:\d\d:\d\d) \[VProf\] VProfLite started" | Select-Object -Last 1
     $from = ($lines | Select-String "-- Performance report --" | Select-Object -Last 1).LineNumber
     if ($from) { $lines[($from - 1)..($lines.Count - 1)] | Set-Content (Join-Path $OutDir "$Name.vprof.txt") }
     $fps = $lines | Select-String "FPS: Avg=" | Select-Object -Last 1
@@ -105,16 +106,19 @@ finally {
     & $PresentMon --terminate_existing_session *> $null   # a killed PresentMon leaves its ETW session running
     if ($Set.Count -gt 0 -and -not $KeepSettings) { Copy-Item $backup $p.Video -Force; Write-Host "Settings restored." }
 }
-if ((Test-Path $csv) -and $stopLine) {
-    # Analysis window ends when the benchmark ends, not when the game is killed. PresentMon's clock is
-    # not local time (3 h ahead here), so estimate the offset from its last frame vs. now.
-    $last = (Get-Content $csv -Tail 1).Split(',')[8]
+if ((Test-Path $csv) -and $stopLine -and $startLine) {
+    # Analysis window = the benchmark itself (game's VProf start..stop), not loading or game exit.
+    # PresentMon's clock is not local time (3 h ahead here): estimate the offset from its last frame vs. now.
+    # The last CSV line is cut off (PresentMon is killed), so take the last complete one.
+    $last = Get-Content $csv -Tail 5 | ForEach-Object { $_.Split(',') } | Where-Object { $_ -match '^\d{4}-\d+-\d+ \d+:\d+:\d+' } | Select-Object -Last 1
     $y, $mo, $d = ($last.Split(' ')[0]).Split('-'); $hms = $last.Split(' ')[1].Split('.')[0].Split(':')
     $lastPm = Get-Date -Year $y -Month $mo -Day $d -Hour $hms[0] -Minute $hms[1] -Second $hms[2]
     $offset = [Math]::Round(($lastPm - (Get-Date)).TotalMinutes / 30) * 30
-    $stop = [datetime]::ParseExact(($stopLine.Matches[0].Groups[1].Value), "MM/dd HH:mm:ss", $null)
-    $stop = $stop.AddYears((Get-Date).Year - $stop.Year).AddMinutes($offset)
-    $stop.ToString("yyyy-M-d HH:mm:ss") | Set-Content (Join-Path $OutDir "$Name.end.txt")
+    $times = foreach ($ln in $startLine, $stopLine) {
+        $t = [datetime]::ParseExact($ln.Matches[0].Groups[1].Value, "MM/dd HH:mm:ss", $null)
+        $t.AddYears((Get-Date).Year - $t.Year).AddMinutes($offset).ToString("yyyy-M-d HH:mm:ss")
+    }
+    $times | Set-Content (Join-Path $OutDir "$Name.end.txt")
 }
 if (Test-Path $csv) {
     & $Python -m pcassist session report $csv --process cs2.exe

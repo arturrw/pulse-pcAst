@@ -25,6 +25,7 @@ $All = [ordered]@{
     floor   = @{ 'setting.msaa_samples' = '0'; 'setting.videocfg_shadow_quality' = '0'; 'setting.videocfg_dynamic_shadows' = '0'
                  'setting.videocfg_ao_detail' = '0'; 'setting.shaderquality' = '0' }   # everything cheap: is there any headroom at all?
 }
+$Only = @($Only | ForEach-Object { $_ -split "," } | Where-Object { $_ })   # -File passes "a,b" as one string
 $Variants = [ordered]@{}
 foreach ($v in $Only) {
     if (-not $All.Contains($v)) { throw "unknown variant '$v' (known: $($All.Keys -join ', '))" }

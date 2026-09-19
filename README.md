@@ -76,7 +76,7 @@ route for a before/after comparison, and repeat each setting at least twice: sin
 
 `scriptsench_batch.ps1 -Repeats 2 -Tag x -Only base,shadowL,fsr3` runs the workshop FPS benchmark
 per variant with PresentMon and prints a table (`--slices` adds FPS per 10 s of the route). Results
-land in `data/bench/` (git-ignored). Findings on RTX / 1440p, all settings max as `base` (264 avg FPS,
+land in `data/bench/` (git-ignored). Findings on 1440p, all settings max as `base` (264 avg FPS,
 1% low 92, 0.1% low 61), 2 runs per variant, repeat spread is 0.1-5 FPS:
 
 | variant | avg FPS | 1% low | 0.1% low |
@@ -88,7 +88,7 @@ land in `data/bench/` (git-ignored). Findings on RTX / 1440p, all settings max a
 | shadows + shaders Low | +10% | +10% | +7% |
 | FSR 2 / 3 / 4 | +14% / +20% / +19% | +32% / +37% / +41% | +33% / +39% / +32% |
 | 1080p | +14% | +27% | +42% |
-| everything minimum, 1440p | +27% | +33% | +16% |
+| everything minimum, 1440p | +27% | +33% | +22% |
 
 - The route is deterministic: the same places (20-40 s, 80-90 s) are slow in every run and every variant.
   There GPU time is about 2x and CPU busy time 3-6x the median, so lows come from heavy scenes, not random hitches.

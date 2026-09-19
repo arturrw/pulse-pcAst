@@ -17,12 +17,14 @@ $Variants = [ordered]@{
     shadowM = @{ 'setting.videocfg_shadow_quality' = '1' }   # verify the value scale for "Medium" in cs2_video.txt
 }
 
-for ($i = 1; $i -le $Repeats; $i++) {
+:outer for ($i = 1; $i -le $Repeats; $i++) {
     foreach ($v in $Variants.Keys) {
         $name = "${Tag}_${v}_$i"
         Write-Host "`n=== $name ==="
-        & powershell -NoProfile -File $Bench -Name $name -Set $Variants[$v]
-        if ($LASTEXITCODE -ne 0) { Write-Host "run $name failed, continuing" }
+        & $Bench -Name $name -Set $Variants[$v]   # in-process: a hashtable can't be passed to a child powershell -File
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $Root "data\bench\$name.end.txt"))) {
+            Write-Host "run $name failed, stopping the batch"; break outer
+        }
     }
 }
 

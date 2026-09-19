@@ -50,6 +50,28 @@ powershell -File scripts\autostart.ps1 remove    # stop and unregister
 Data stays in `data/metrics.db` (roughly 5-10 MB/day, measured from the first samples at the default 30 s interval; history older than 90 days is deleted automatically, change with `collect --keep-days N`, 0 = keep all).
 Manual cleanup and file shrink: `pcassist prune --days 30`.
 
+## Game sessions (FPS / frame time analysis)
+Analyzes one recorded game session: FPS, 1% / 0.1% lows, what limits the frame rate (GPU or CPU),
+hitches with what the hardware was doing at that moment, temperatures, VRAM. All numbers are computed
+deterministically; nothing depends on the LLM.
+
+Record (the game must not use anti-cheat that blocks ETW; PresentMon does not inject into the game):
+1. Install PresentMon (console, `PresentMon-2.5.1-x64.exe`) to `%USERPROFILE%\Tools\PresentMon\`.
+2. Optional, for temperatures/VRAM/CPU: MSI Afterburner -> Settings -> Monitoring -> enable *Log history to file*
+   (put the `.hml` into `data\sessions\`).
+3. Start the recorder, then the game. It asks for admin rights itself and stops when the game exits:
+```powershell
+powershell -File scripts\record_presentmon.ps1 -Process cs2.exe -Name cs2_presentmon
+```
+Analyze (window = the longest stretch of normal FPS, so map loading is cut off; override with `--start/--end HH:MM`):
+```powershell
+python -m pcassist session report data\sessions\cs2_presentmon.csv --hml data\sessions\cs2.hml --process cs2.exe
+python -m pcassist session compare before.csv after.csv --hml-before a.hml --hml-after b.hml
+```
+PresentMon and Afterburner stamp time in different zones; the shift is detected automatically from the two
+recordings (`--pm-offset-hours` overrides). `data/sessions/` is git-ignored. Use the same scene or benchmark
+route for a before/after comparison, and repeat each setting at least twice: single runs vary.
+
 ## Chat tools
 The model answers only by calling these read-only tools:
 

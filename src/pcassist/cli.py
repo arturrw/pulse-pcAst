@@ -73,6 +73,40 @@ def cmd_scan(args: argparse.Namespace) -> None:
         print(f"{f['size_gb']:>9.2f} GB  {f['folder']}" + ("" if f["complete"] else "  (partial: time limit)"))
 
 
+def _hhmmss(text: str | None):
+    if not text:
+        return None
+    from datetime import datetime
+
+    for fmt in ("%H:%M:%S", "%H:%M"):
+        try:
+            return datetime.strptime(text, fmt).time()
+        except ValueError:
+            pass
+    raise SystemExit(f"bad time {text!r}, use HH:MM or HH:MM:SS")
+
+
+def _analyze(pm_csv, hml, args):
+    from . import games
+
+    try:
+        return games.analyze(pm_csv, hml, args.process, _hhmmss(getattr(args, "start", None)),
+                             _hhmmss(getattr(args, "end", None)), args.pm_offset_hours)
+    except (OSError, ValueError) as e:
+        raise SystemExit(f"{pm_csv}: {e}")
+
+
+def cmd_session(args: argparse.Namespace) -> None:
+    from . import games
+
+    if args.session_cmd == "report":
+        print(games.format_report(_analyze(args.presentmon, args.hml, args)))
+    else:
+        a = _analyze(args.before, args.hml_before, args)
+        b = _analyze(args.after, args.hml_after, args)
+        print(games.format_compare(a, b))
+
+
 def cmd_chat(args: argparse.Namespace) -> None:
     from . import tools
     from .chat import run_chat
@@ -103,6 +137,24 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--limit", type=int, default=10)
     sc.add_argument("--seconds", type=int, default=120, help="time budget for the scan")
     sc.set_defaults(func=cmd_scan)
+
+    se = sub.add_parser("session", help="analyze a recorded game session (PresentMon CSV + Afterburner log)")
+    se_sub = se.add_subparsers(dest="session_cmd", required=True)
+    rep = se_sub.add_parser("report", help="FPS, lows, limiter, hitches and hardware stats of one session")
+    rep.add_argument("presentmon", help="PresentMon CSV recorded with --date_time")
+    rep.add_argument("--hml", help="Afterburner .hml log of the same session (adds temperatures, VRAM, CPU)")
+    rep.add_argument("--start", help="window start HH:MM[:SS] (default: auto, cuts off loading)")
+    rep.add_argument("--end", help="window end HH:MM[:SS]")
+    cmp_ = se_sub.add_parser("compare", help="deltas between two sessions (before -> after a settings change)")
+    cmp_.add_argument("before")
+    cmp_.add_argument("after")
+    cmp_.add_argument("--hml-before")
+    cmp_.add_argument("--hml-after")
+    for p_ in (rep, cmp_):
+        p_.add_argument("--process", default=None, help="only frames of this exe, e.g. cs2.exe")
+        p_.add_argument("--pm-offset-hours", type=float, default=None,
+                        help="PresentMon time minus local time (default: auto-detected from the .hml)")
+    se.set_defaults(func=cmd_session)
 
     ch = sub.add_parser("chat", help="ask questions about your PC via a local Ollama model")
     ch.add_argument("--model", default="qwen3:8b")

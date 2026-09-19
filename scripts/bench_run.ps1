@@ -71,7 +71,9 @@ try {
         Write-Host ("Applied: " + (($Set.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ", "))
     }
     if (Test-Path $log) { Remove-Item $log }
-    $pm = Start-Process $PresentMon -ArgumentList "--process_name cs2.exe --output_file `"$csv`" --date_time" -NoNewWindow -PassThru
+    $pm = Start-Process $PresentMon -ArgumentList "--process_name cs2.exe --output_file `"$csv`" --date_time --stop_existing_session" -NoNewWindow -PassThru
+    Start-Sleep -Seconds 3
+    if ($pm.HasExited) { throw "PresentMon exited right after start (see its message above)" }
     Start-Process $p.SteamExe -ArgumentList "-applaunch 730 -novid -condebug +map_workshop $MapId $MapName"
     Write-Host "Launched CS2 on $MapName. Waiting for the game..."
 
@@ -100,6 +102,7 @@ finally {
     Get-Process cs2 -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Seconds 4
     if ($pm -and -not $pm.HasExited) { Stop-Process -Id $pm.Id -Force }
+    & $PresentMon --terminate_existing_session *> $null   # a killed PresentMon leaves its ETW session running
     if ($Set.Count -gt 0 -and -not $KeepSettings) { Copy-Item $backup $p.Video -Force; Write-Host "Settings restored." }
 }
 if ((Test-Path $csv) -and $stopLine) {

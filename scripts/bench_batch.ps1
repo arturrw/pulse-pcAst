@@ -4,6 +4,7 @@
 # hits every variant equally. Edit $Variants to test other settings.
 param(
     [int]$Repeats = 3,
+    [int]$From = 1,                                    # first repeat to run: resume an interrupted batch with the same -Tag
     [string]$Tag = (Get-Date -Format "MMdd_HHmm"),
     [string[]]$Only = @("base", "msaa2", "shadowM")   # variants to run, see $All below
 )
@@ -32,7 +33,7 @@ foreach ($v in $Only) {
     $Variants[$v] = $All[$v]
 }
 
-:outer for ($i = 1; $i -le $Repeats; $i++) {
+:outer for ($i = $From; $i -le $Repeats; $i++) {
     foreach ($v in $Variants.Keys) {
         $name = "${Tag}_${v}_$i"
         Write-Host "`n=== $name ==="

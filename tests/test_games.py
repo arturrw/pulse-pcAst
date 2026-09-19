@@ -114,6 +114,14 @@ def test_hitch_gets_hardware_context_and_throttle_is_counted():
     assert top["worst_ms"] == 500 and top["GPU usage"] == 4.0 and top["Memory usage"] == 7400.0
     assert r["hardware"]["temp_limit_s"] == 1 and r["hardware"]["Memory usage"]["max"] == 7400.0
     assert "Hitches" in games.format_report(r)
+    assert top["near_end"] is False
+
+
+def test_hitch_near_the_end_is_marked_as_probable_exit():
+    p = _write_pm([(40, 8, 4, 6), (1, 500, 5, 5)])
+    r = games.analyze(p, start=(BASE + PM_SHIFT).time(), offset_hours=0)
+    assert r["hitches"]["worst"][0]["near_end"] is True
+    assert "probably the game exiting" in games.format_report(r)
 
 
 def test_manual_window_and_short_capture_warning():

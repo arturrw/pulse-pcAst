@@ -177,8 +177,10 @@ def hitches(frames: list[dict], hw: dict | None, top: int = 5) -> dict:
         if f["ft"] > HITCH_MS:
             per_sec[f["t"].replace(microsecond=0)].append(f["ft"])
     out = []
+    last = frames[-1]["t"] if frames else None
     for sec, v in sorted(per_sec.items(), key=lambda kv: -sum(kv[1]))[:top]:
-        row = {"t": sec, "frames": len(v), "worst_ms": max(v)}
+        row = {"t": sec, "frames": len(v), "worst_ms": max(v),
+               "near_end": last is not None and (last - sec).total_seconds() <= 15}
         if hw and sec in hw:
             row.update({k: hw[sec].get(k) for k in ("GPU usage", "CPU usage", "Memory usage")})
         out.append(row)
@@ -279,7 +281,8 @@ def format_report(r: dict) -> str:
             ctx = ""
             if x.get("GPU usage") is not None:
                 ctx = f" | GPU {x['GPU usage']:.0f}%, CPU {x['CPU usage']:.0f}%, VRAM {x['Memory usage']:.0f} MB"
-            lines.append(f"  {_t(x['t'])}: {x['frames']} frames, worst {x['worst_ms']:.0f} ms{ctx}")
+            end = "  [last 15 s of the window: probably the game exiting]" if x["near_end"] else ""
+            lines.append(f"  {_t(x['t'])}: {x['frames']} frames, worst {x['worst_ms']:.0f} ms{ctx}{end}")
     hw = r["hardware"]
     if hw:
         lines += ["", "Hardware (Afterburner):"]

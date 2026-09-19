@@ -59,9 +59,9 @@ Record (the game must not use anti-cheat that blocks ETW; PresentMon does not in
 1. Install PresentMon (console, `PresentMon-2.5.1-x64.exe`) to `%USERPROFILE%\Tools\PresentMon\`.
 2. Optional, for temperatures/VRAM/CPU: MSI Afterburner -> Settings -> Monitoring -> enable *Log history to file*
    (put the `.hml` into `data\sessions\`).
-3. Start the recorder, then the game. It asks for admin rights itself and stops when the game exits:
+3. Start the recorder, then the game. It asks for admin rights itself and stops when the game exits. `-Name` is optional (default: game + date/time); it refuses to overwrite an existing file:
 ```powershell
-powershell -File scripts\record_presentmon.ps1 -Process cs2.exe -Name cs2_presentmon
+powershell -File scripts\record_presentmon.ps1 -Process cs2.exe -Name before_shadows_high
 ```
 Analyze (window = the longest stretch of normal FPS, so map loading is cut off; override with `--start/--end HH:MM`):
 ```powershell

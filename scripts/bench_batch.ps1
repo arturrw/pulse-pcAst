@@ -24,6 +24,9 @@ $All = [ordered]@{
     aoOff   = @{ 'setting.videocfg_ao_detail' = '0' }
     shaderL = @{ 'setting.shaderquality' = '0' }
     shadowShaderL = @{ 'setting.videocfg_shadow_quality' = '0'; 'setting.shaderquality' = '0' }
+    fsr2    = @{ 'setting.videocfg_fsr_detail' = '2' }   # FSR keeps 1440p output; value meaning is unverified (0 = off), check FPS grows with it
+    fsr3    = @{ 'setting.videocfg_fsr_detail' = '3' }
+    fsr4    = @{ 'setting.videocfg_fsr_detail' = '4' }
     res1080 = @{ 'setting.defaultres' = '1920'; 'setting.defaultresheight' = '1080' }   # resolution-bound? (base is 1440p)
     floor   = @{ 'setting.msaa_samples' = '0'; 'setting.videocfg_shadow_quality' = '0'; 'setting.videocfg_dynamic_shadows' = '0'
                  'setting.videocfg_ao_detail' = '0'; 'setting.shaderquality' = '0' }   # everything cheap: is there any headroom at all?

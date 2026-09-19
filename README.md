@@ -72,6 +72,34 @@ PresentMon and Afterburner stamp time in different zones; the shift is detected 
 recordings (`--pm-offset-hours` overrides). `data/sessions/` is git-ignored. Use the same scene or benchmark
 route for a before/after comparison, and repeat each setting at least twice: single runs vary.
 
+### CS2 settings A/B (unattended benchmark)
+
+`scriptsench_batch.ps1 -Repeats 2 -Tag x -Only base,shadowL,fsr3` runs the workshop FPS benchmark
+per variant with PresentMon and prints a table (`--slices` adds FPS per 10 s of the route). Results
+land in `data/bench/` (git-ignored). Findings on RTX / 1440p, all settings max as `base` (264 avg FPS,
+1% low 92, 0.1% low 61), 2 runs per variant, repeat spread is 0.1-5 FPS:
+
+| variant | avg FPS | 1% low | 0.1% low |
+|---|---|---|---|
+| shadows Low | +4.5% | +5% | +6% |
+| shaders Low | +4.6% | +3% | +3% |
+| AO off | +2% | +1% | +2% |
+| dynamic shadows off | 0 (noise) | +1% | +5% |
+| shadows + shaders Low | +10% | +10% | +7% |
+| FSR 2 / 3 / 4 | +14% / +20% / +19% | +32% / +37% / +41% | +33% / +39% / +32% |
+| 1080p | +14% | +27% | +42% |
+| everything minimum, 1440p | +27% | +33% | +16% |
+
+- The route is deterministic: the same places (20-40 s, 80-90 s) are slow in every run and every variant.
+  There GPU time is about 2x and CPU busy time 3-6x the median, so lows come from heavy scenes, not random hitches.
+- Only 1-2 frames per run exceed 30 ms, at fixed route seconds (0 s, 7 s) whatever the settings: a
+  scripted event of the map, not a settings problem.
+- Resolution is the main lever for lows. To keep 1440p output, FSR gets the same lows as 1080p;
+  the FSR values 3 and 4 are within noise of each other. Which number is which FSR preset is unverified
+  (0 = off, FPS grows with the value); check in the game menu.
+- Shadow and shader quality are worth about +10% together, AO and dynamic shadows are not worth touching.
+- Not measured: image quality (FSR softens the picture), CPU-limited scenes (this map is GPU-bound).
+
 ## Chat tools
 The model answers only by calling these read-only tools:
 

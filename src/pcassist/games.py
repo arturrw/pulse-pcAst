@@ -329,3 +329,26 @@ def format_compare(a: dict, b: dict) -> str:
                      "compare the same scene/route.")
     lines.append("Single runs vary from run to run: repeat each setting at least twice before trusting a small delta.")
     return "\n".join(lines)
+
+
+def summarize_runs(paths, process: str | None = None) -> str:
+    """Table of repeated runs grouped by variant. File names are <tag>_<variant>_<n>.csv;
+    the spread (max - min over repeats) shows whether a difference between variants is real."""
+    groups: dict[str, list[dict]] = {}
+    for p in sorted(paths):
+        stem = Path(p).stem
+        parts = stem.split("_")
+        variant = parts[-2] if len(parts) >= 3 and parts[-1].isdigit() else stem
+        try:
+            groups.setdefault(variant, []).append(analyze(p, process=process)["frames"])
+        except (OSError, ValueError):
+            continue
+    if not groups:
+        return "no usable runs"
+    rows = [f"{'variant':<12}{'runs':>5}{'avg FPS':>10}{'spread':>9}{'1% low':>10}{'0.1% low':>10}{'p99 ms':>8}"]
+    for v, fs in groups.items():
+        avg = [f["avg_fps"] for f in fs]
+        mean = lambda k: sum(f[k] for f in fs) / len(fs)
+        rows.append(f"{v:<12}{len(fs):>5}{sum(avg) / len(avg):>10.1f}{max(avg) - min(avg):>9.1f}"
+                    f"{mean('low1_fps'):>10.1f}{mean('low01_fps'):>10.1f}{mean('p99_ms'):>8.2f}")
+    return "\n".join(rows)

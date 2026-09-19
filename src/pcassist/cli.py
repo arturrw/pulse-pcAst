@@ -1,5 +1,6 @@
 import argparse
 import time
+from pathlib import Path
 
 from . import db
 from .collectors import Collector
@@ -101,6 +102,9 @@ def cmd_session(args: argparse.Namespace) -> None:
 
     if args.session_cmd == "report":
         print(games.format_report(_analyze(args.presentmon, args.hml, args)))
+    elif args.session_cmd == "summary":
+        paths = sorted(Path(args.folder).glob(f"{args.tag}_*.csv"))
+        print(games.summarize_runs(paths, args.process))
     else:
         a = _analyze(args.before, args.hml_before, args)
         b = _analyze(args.after, args.hml_after, args)
@@ -150,6 +154,10 @@ def main(argv: list[str] | None = None) -> int:
     cmp_.add_argument("after")
     cmp_.add_argument("--hml-before")
     cmp_.add_argument("--hml-after")
+    sm = se_sub.add_parser("summary", help="table of repeated runs (<tag>_<variant>_<n>.csv) with spread")
+    sm.add_argument("folder")
+    sm.add_argument("--tag", required=True)
+    sm.add_argument("--process", default=None)
     for p_ in (rep, cmp_):
         p_.add_argument("--process", default=None, help="only frames of this exe, e.g. cs2.exe")
         p_.add_argument("--pm-offset-hours", type=float, default=None,

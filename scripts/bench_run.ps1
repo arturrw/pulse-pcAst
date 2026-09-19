@@ -90,6 +90,7 @@ try {
     if (-not $done) { throw "no VProf report in console.log (the benchmark may not start by itself, or the map name is wrong)" }
     Start-Sleep -Seconds 3
     $lines = Get-Content $log
+    $stopLine = $lines | Select-String "^(\d\d/\d\d \d\d:\d\d:\d\d) \[VProf\] VProfLite stopped" | Select-Object -Last 1
     $from = ($lines | Select-String "-- Performance report --" | Select-Object -Last 1).LineNumber
     if ($from) { $lines[($from - 1)..($lines.Count - 1)] | Set-Content (Join-Path $OutDir "$Name.vprof.txt") }
     $fps = $lines | Select-String "FPS: Avg=" | Select-Object -Last 1
@@ -100,6 +101,17 @@ finally {
     Start-Sleep -Seconds 4
     if ($pm -and -not $pm.HasExited) { Stop-Process -Id $pm.Id -Force }
     if ($Set.Count -gt 0 -and -not $KeepSettings) { Copy-Item $backup $p.Video -Force; Write-Host "Settings restored." }
+}
+if ((Test-Path $csv) -and $stopLine) {
+    # Analysis window ends when the benchmark ends, not when the game is killed. PresentMon's clock is
+    # not local time (3 h ahead here), so estimate the offset from its last frame vs. now.
+    $last = (Get-Content $csv -Tail 1).Split(',')[8]
+    $y, $mo, $d = ($last.Split(' ')[0]).Split('-'); $hms = $last.Split(' ')[1].Split('.')[0].Split(':')
+    $lastPm = Get-Date -Year $y -Month $mo -Day $d -Hour $hms[0] -Minute $hms[1] -Second $hms[2]
+    $offset = [Math]::Round(($lastPm - (Get-Date)).TotalMinutes / 30) * 30
+    $stop = [datetime]::ParseExact(($stopLine.Matches[0].Groups[1].Value), "MM/dd HH:mm:ss", $null)
+    $stop = $stop.AddYears((Get-Date).Year - $stop.Year).AddMinutes($offset)
+    $stop.ToString("yyyy-M-d HH:mm:ss") | Set-Content (Join-Path $OutDir "$Name.end.txt")
 }
 if (Test-Path $csv) {
     & $Python -m pcassist session report $csv --process cs2.exe

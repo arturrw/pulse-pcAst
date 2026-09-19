@@ -234,6 +234,12 @@ def analyze(pm_csv, hml=None, process: str | None = None, start: datetime | time
     else:
         start = start or frames[0]["t"]
         end = end or frames[-1]["t"] + timedelta(seconds=1)
+    sidecar = Path(pm_csv).with_suffix(".end.txt")   # written by bench_run.ps1: when the benchmark ended
+    if auto and sidecar.exists():
+        bench_end = _parse_pm_time(sidecar.read_text().strip()) - shift
+        if start < bench_end < end:
+            end = bench_end
+            notes.append("window ends at the benchmark's own end (game exit cut off)")
     play = [f for f in frames if start <= f["t"] < end]
     if not play:
         raise ValueError("no frames in the selected window")

@@ -4,17 +4,31 @@
 # hits every variant equally. Edit $Variants to test other settings.
 param(
     [int]$Repeats = 3,
-    [string]$Tag = (Get-Date -Format "MMdd_HHmm")
+    [string]$Tag = (Get-Date -Format "MMdd_HHmm"),
+    [string[]]$Only = @("base", "msaa2", "shadowM")   # variants to run, see $All below
 )
 
 $Root = Split-Path $PSScriptRoot -Parent
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
 $Bench = Join-Path $PSScriptRoot "bench_run.ps1"
 
-$Variants = [ordered]@{
+# cs2_video.txt values: shadow_quality 0=Low 1=Medium 2=High; ao_detail 0=Off 1=Low 2=Medium; shaderquality 0=Low 1=High;
+# dynamic_shadows 0=Sun only 1=All; msaa_samples 0/2/4/8
+$All = [ordered]@{
     base    = @{}
     msaa2   = @{ 'setting.msaa_samples' = '2' }
-    shadowM = @{ 'setting.videocfg_shadow_quality' = '1' }   # verify the value scale for "Medium" in cs2_video.txt
+    shadowM = @{ 'setting.videocfg_shadow_quality' = '1' }
+    shadowL = @{ 'setting.videocfg_shadow_quality' = '0' }
+    dynOff  = @{ 'setting.videocfg_dynamic_shadows' = '0' }
+    aoOff   = @{ 'setting.videocfg_ao_detail' = '0' }
+    shaderL = @{ 'setting.shaderquality' = '0' }
+    floor   = @{ 'setting.msaa_samples' = '0'; 'setting.videocfg_shadow_quality' = '0'; 'setting.videocfg_dynamic_shadows' = '0'
+                 'setting.videocfg_ao_detail' = '0'; 'setting.shaderquality' = '0' }   # everything cheap: is there any headroom at all?
+}
+$Variants = [ordered]@{}
+foreach ($v in $Only) {
+    if (-not $All.Contains($v)) { throw "unknown variant '$v' (known: $($All.Keys -join ', '))" }
+    $Variants[$v] = $All[$v]
 }
 
 :outer for ($i = 1; $i -le $Repeats; $i++) {

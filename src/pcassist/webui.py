@@ -49,19 +49,44 @@ class App:
         self._notify = notify_fn or alerts.notify
         self._cache: dict[str, tuple[float, object]] = {}
         self._lock = threading.Lock()
+        self._refreshing: set[str] = set()
         self._sessions: dict[str, list] = {}
         tools.set_db(self.db_path)
 
     # ---- small cache: the Windows checks take a couple of seconds each
     def _cached(self, key: str, fn, ttl: float = STATUS_TTL):
+        """Stale-while-revalidate: an old value is returned at once and refreshed in the background, so only the very
+        first call (or the first after the cache was cleared) waits for the slow Windows checks."""
         with self._lock:
             hit = self._cache.get(key)
-            if hit and time.time() - hit[0] < ttl:
+            if hit:
+                if time.time() - hit[0] >= ttl and key not in self._refreshing:
+                    self._refreshing.add(key)
+                    threading.Thread(target=self._refresh, args=(key, fn), daemon=True).start()
                 return hit[1]
         value = fn()
         with self._lock:
             self._cache[key] = (time.time(), value)
         return value
+
+    def _refresh(self, key: str, fn) -> None:
+        try:
+            value = fn()
+            with self._lock:
+                self._cache[key] = (time.time(), value)
+        except Exception:   # noqa: BLE001 - keep the old value, try again next time
+            pass
+        finally:
+            with self._lock:
+                self._refreshing.discard(key)
+
+    def warm(self) -> None:
+        """Fill the caches before the first page asks (run in the background at start)."""
+        for fn in (self.status, self.findings, self.setup):
+            try:
+                fn()
+            except Exception:   # noqa: BLE001
+                pass
 
     def _forget_cache(self, *keys: str) -> None:
         with self._lock:
@@ -121,16 +146,16 @@ class App:
     # ---- findings and accepted risks
     def findings(self) -> dict:
         out = []
-        health = tools.system_health(168)
+        health = self._cached("health168", lambda: tools.system_health(168))
         if health.get("available"):
             out += [{**f, "source": "Windows and Defender"} for f in health["findings"]]
-        startup = tools.startup_changes(168)
+        startup = self._cached("startup168", lambda: tools.startup_changes(168))
         if startup.get("available"):
             for x in startup["new_or_changed"] + startup["already_present_but_suspicious"]:
                 out.append({"id": x["id"], "source": "Autostart", "severity": x["severity"], "title": x["name"],
                             "detail": f"{x['kind'].replace('_', ' ')}: " + "; ".join(x["reasons"] or ["new entry"]) + f" ({x['command'][:120]})",
                             "accepted": x["accepted"], "accepted_note": x.get("accepted_note", "")})
-        watch = tools.process_watch(1440)
+        watch = self._cached("watch", lambda: tools.process_watch(1440))
         info = []
         if "error" not in watch:
             for f in watch["suspect_files"]:
@@ -441,6 +466,7 @@ def serve(db_path, port: int = 8765, model: str = "qwen3:8b", open_browser: bool
         print(json.dumps({"url": url, "port": server.server_address[1], "token": server.token}), flush=True)
     else:
         print(f"pcassist is running at {url}\nClose the browser tab and it stops by itself (or press Ctrl+C).", flush=True)
+    threading.Thread(target=app.warm, daemon=True).start()
     if idle_seconds > 0:
         threading.Thread(target=server.watch_idle, daemon=True).start()
     if open_browser:

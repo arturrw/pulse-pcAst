@@ -119,6 +119,20 @@ def cmd_chat(args: argparse.Namespace) -> None:
     run_chat(args.model, args.think, args.num_ctx)
 
 
+def cmd_report(args: argparse.Namespace) -> None:
+    import os
+
+    from . import report, tools
+
+    tools.set_db(args.db)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(report.build_report(args.hours), encoding="utf-8")
+    print(f"Report written to {out.resolve()}")
+    if args.open:
+        os.startfile(out.resolve())   # Windows: the default browser
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pcassist")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -171,6 +185,13 @@ def main(argv: list[str] | None = None) -> int:
     ch.add_argument("--num-ctx", type=int, default=8192, help="context window in tokens")
     ch.add_argument("--db", default=str(db.DEFAULT_DB))
     ch.set_defaults(func=cmd_chat)
+
+    rp = sub.add_parser("report", help="write an HTML report (charts, unusual periods, disks, games) from the history")
+    rp.add_argument("--hours", type=float, default=24, help="how far back to look")
+    rp.add_argument("--out", default=str(db.DEFAULT_DB.parent / "reports" / "latest.html"))
+    rp.add_argument("--open", action="store_true", help="open the report in the default browser")
+    rp.add_argument("--db", default=str(db.DEFAULT_DB))
+    rp.set_defaults(func=cmd_report)
 
     args = parser.parse_args(argv)
     args.func(args)

@@ -25,9 +25,27 @@ def test_a_record_from_a_real_trace_is_decoded():
     # taken from the first measurement on a real machine: numbers as digit strings, swapped ports, the server in `daddr`
     real = {"id": 11, "pid": 24052, "d": "3952361644", "s": "1997973696", "dp": 47873, "sp": 15863, "size": 24}
     r = netstats.summarize([real], {24052: "app.exe"}, 30)
-    assert r == [{"pid": 24052, "name": "app.exe", "sent": 0, "received": 24, "sent_per_second": 0.0,
+    assert r == [{"name": "app.exe", "pids": [24052], "sent": 0, "received": 24, "sent_per_second": 0.0,
                   "top_destinations": [{"to": "172.64.148.235:443", "bytes": 24}]}]
     assert netstats._port(47873) == 443 and netstats._port(15863) == 63293 and netstats._ip("1997973696") == "192.168.22.119"
+
+
+def test_processes_with_the_same_name_are_added_up_into_one_row():
+    rows = [_row(10, 1, "8.8.8.8", "10.0.0.1", 443, 1, 100), _row(10, 2, "8.8.8.8", "10.0.0.1", 443, 2, 300),
+            _row(11, 3, "1.1.1.1", "10.0.0.1", 443, 3, 50), _row(10, 4, "9.9.9.9", "10.0.0.1", 443, 4, 10)]
+    r = netstats.summarize(rows, {1: "chrome.exe", 2: "chrome.exe", 3: "chrome.exe", 4: "other.exe"})
+    assert [x["name"] for x in r] == ["chrome.exe", "other.exe"]
+    chrome = r[0]
+    assert chrome["pids"] == [1, 2, 3] and chrome["sent"] == 400 and chrome["received"] == 50
+    assert chrome["top_destinations"][0] == {"to": "8.8.8.8:443", "bytes": 400}
+
+
+def test_multicast_and_broadcast_chatter_is_not_public_traffic():
+    rows = [_row(43, 1, "224.0.0.251", "192.168.1.5", 5353, 5353, 270), _row(42, 1, "255.255.255.255", "192.168.1.5", 67, 68, 300),
+            _row(59, 1, "ff02::fb", "fe80::1", 5353, 5353, 100), _row(10, 1, "8.8.8.8", "192.168.1.5", 443, 5000, 10)]
+    r = netstats.summarize(rows, {1: "app.exe"})
+    assert r[0]["sent"] == 10 and r[0]["received"] == 0 and r[0]["top_destinations"] == [{"to": "8.8.8.8:443", "bytes": 10}]
+    assert netstats.summarize(rows, {1: "app.exe"}, include_local=True)[0]["received"] == 370
 
 
 def test_the_remote_end_is_the_public_address_whichever_field_it_is_in():
@@ -65,7 +83,7 @@ def test_unknown_event_ids_are_ignored_and_processes_are_sorted_by_what_they_sen
     rows = [_row(10, 1, "8.8.8.8", "10.0.0.1", 443, 1, 100), _row(10, 2, "1.1.1.1", "10.0.0.1", 443, 2, 900),
             _row(12, 3, "203.0.113.7", "10.0.0.1", 443, 3, 5000)]                     # 12 is a connect event, not data
     r = netstats.summarize(rows, {1: "small.exe"})
-    assert [x["pid"] for x in r] == [2, 1] and r[0]["name"] == "pid 2 (gone)" and r[1]["name"] == "small.exe"
+    assert [x["pids"] for x in r] == [[2], [1]] and r[0]["name"] == "pid 2 (gone)" and r[1]["name"] == "small.exe"
 
 
 def test_the_report_shows_a_table_points_out_big_uploads_and_handles_an_empty_window():

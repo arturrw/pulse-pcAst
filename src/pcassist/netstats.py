@@ -85,7 +85,8 @@ def _is_remote(addr: str, include_local: bool) -> bool:
         ip = ipaddress.ip_address(addr.split("%")[0])
     except ValueError:
         return include_local
-    return include_local or ip.is_global
+    # multicast (224.0.0.251 for mDNS, ff02::fb) and broadcast are LAN chatter that "is_global" does not exclude
+    return include_local or (ip.is_global and not ip.is_multicast and str(ip) != "255.255.255.255")
 
 
 def summarize(rows: list[dict], names: dict[int, str] | None = None, seconds: float = 60.0, include_local: bool = False) -> list[dict]:
@@ -104,11 +105,20 @@ def summarize(rows: list[dict], names: dict[int, str] | None = None, seconds: fl
         p["sent" if send else "received"] += int(r["size"])
         key = f"{remote}:{port}"
         p["dest"][key] = p["dest"].get(key, 0) + int(r["size"])
-    out = []
+    merged: dict[str, dict] = {}                # one row per program name: chrome.exe has many processes
     for pid, p in procs.items():
-        top = sorted(p["dest"].items(), key=lambda kv: -kv[1])[:3]
-        out.append({"pid": pid, "name": names.get(pid) or f"pid {pid} (gone)", "sent": p["sent"], "received": p["received"],
-                    "sent_per_second": p["sent"] / max(seconds, 1e-9), "top_destinations": [{"to": k, "bytes": v} for k, v in top]})
+        name = names.get(pid) or f"pid {pid} (gone)"
+        m = merged.setdefault(name, {"name": name, "pids": [], "sent": 0, "received": 0, "dest": {}})
+        m["pids"].append(pid)
+        m["sent"] += p["sent"]
+        m["received"] += p["received"]
+        for k, v in p["dest"].items():
+            m["dest"][k] = m["dest"].get(k, 0) + v
+    out = []
+    for m in merged.values():
+        top = sorted(m["dest"].items(), key=lambda kv: -kv[1])[:3]
+        out.append({"name": m["name"], "pids": sorted(m["pids"]), "sent": m["sent"], "received": m["received"],
+                    "sent_per_second": m["sent"] / max(seconds, 1e-9), "top_destinations": [{"to": k, "bytes": v} for k, v in top]})
     out.sort(key=lambda x: (-x["sent"], -x["received"]))
     return out
 

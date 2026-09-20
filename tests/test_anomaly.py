@@ -1,7 +1,16 @@
 """Unit tests for the streaming anomaly detector. Run: python tests/test_anomaly.py (or pytest)."""
 import math
+import os
+import shutil
+import sys
+import tempfile
+import time
+from pathlib import Path
 
-from pcassist import anomaly
+sys.path.insert(0, str(Path(__file__).parent))
+from test_games import _write_pm  # noqa: E402
+
+from pcassist import anomaly, db, tools  # noqa: E402
 
 
 def _wave(n=600):
@@ -59,6 +68,48 @@ def test_close_events_are_merged_and_far_ones_are_not():
         sc[i] = 50.0
     ev = anomaly.events(sc, 8, merge=12)
     assert [(a, b) for a, b, _ in ev] == [(10, 20), (60, 60)]
+
+
+def _ram_db(tail_level: float, samples: int = 400, tail: int = 30) -> Path:
+    """A metrics.db with `samples` RAM readings 30 s apart ending now: ~50% with tiny noise, the last `tail` at tail_level."""
+    root = Path(tempfile.mkdtemp())
+    now = time.time()
+    with db.connect(root / "metrics.db") as conn:
+        conn.executemany("INSERT INTO system_metrics (ts, ram_percent) VALUES (?, ?)",
+                         [(now - 30 * (samples - i), (50.0 + i % 3 * 0.1) if i < samples - tail else tail_level)
+                          for i in range(samples)])
+    tools.set_db(root / "metrics.db")
+    return root
+
+
+def test_tool_reports_a_sustained_ram_jump():
+    _ram_db(80.0)
+    r = tools.anomalies("ram_percent", 600)
+    assert r["events_found"] == 1
+    e = r["events"][0]
+    assert 49 < e["typical_value"] < 51 and e["most_unusual_value"] == 80.0 and e["during_game"] is None
+    assert e["duration_minutes"] > 10 and e["minutes_ago"] < 20
+
+
+def test_tool_ignores_a_statistically_odd_but_tiny_change():
+    _ram_db(53.0)                                      # +3 points on a rock-steady metric: z is huge, change is not
+    assert tools.anomalies("ram_percent", 600)["events_found"] == 0
+
+
+def test_tool_rejects_load_metrics_and_reports_no_data():
+    _ram_db(80.0)
+    r = tools.anomalies("gpu_util_percent", 600)
+    assert "error" in r and "gpu_temp_c" in r["available"]
+    tools.set_db(Path(tempfile.mkdtemp()) / "empty.db")
+    assert "pcassist collect" in tools.anomalies("ram_percent", 600)["error"]
+
+
+def test_event_during_a_recorded_game_is_marked():
+    root = _ram_db(80.0)
+    (root / "bench").mkdir()
+    shutil.copy(_write_pm([(30, 4, 3, 5)]), root / "bench" / "g_run_1.csv")   # a 30 s capture that ended just now
+    os.utime(root / "bench" / "g_run_1.csv", None)
+    assert tools.anomalies("ram_percent", 600)["events"][0]["during_game"] == "g_run_1"
 
 
 if __name__ == "__main__":

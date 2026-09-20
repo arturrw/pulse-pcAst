@@ -291,6 +291,91 @@ def game_sessions_compare(before: str, after: str) -> dict:
     return _round_deep(out)
 
 
+def _recording_span(path: Path) -> tuple[float, float] | None:
+    """(start, end) of a PresentMon recording in local epoch seconds: end = file modification time, start = end minus
+    the capture length (last minus first row). PresentMon writes its own clock, so only the length is trusted."""
+    from . import games
+
+    try:
+        with open(path, "rb") as f:
+            head = f.readline().decode("utf-8-sig").strip().split(",")
+            first = f.readline().decode("utf-8", "replace").split(",")
+            f.seek(max(0, path.stat().st_size - 4096))
+            last = f.read().decode("utf-8", "replace").strip().splitlines()[-1].split(",")
+        i = head.index("TimeInDateTime")
+        length = (games._parse_pm_time(last[i]) - games._parse_pm_time(first[i])).total_seconds()
+        end = path.stat().st_mtime
+        return end - length, end
+    except (OSError, ValueError, IndexError):
+        return None
+
+
+ANOMALY_WINDOW = 288      # samples of history the detector compares against (~2.4 h at the default 30 s)
+ANOMALY_MIN_RUN = 6       # a deviation must last this many samples to count (~3 min): lone spikes are noise
+ANOMALY_THRESHOLD = 8.0   # robust z-score
+
+
+def anomalies(metric: str, minutes: int = 1440) -> dict:
+    """Find unusual periods of a machine-STATE metric in collected history: values far outside what was normal
+    over the preceding hours (a robust statistical check, not a fault diagnosis). Only state metrics are supported
+    (gpu_temp_c, ram_percent, ram_used_mb, swap_percent): load metrics such as GPU usage, disk or network
+    activity swing whenever the user starts a game, so their outliers are ordinary workload. An event that
+    overlaps a recorded game session has `during_game` set; a high RAM or swap value then is likely the game.
+    Use it only for "anything unusual / strange / abnormal" questions. Questions about a spike, peak, jump or how a
+    metric changed need the numbers from metrics_history instead, not this tool.
+
+    Args:
+        metric: One of gpu_temp_c, ram_percent, ram_used_mb, swap_percent.
+        minutes: How many minutes of history to look at.
+    """
+    if metric not in anomaly.STATE_METRICS:
+        return {"error": f"'{metric}' is not a state metric", "available": list(anomaly.STATE_METRICS),
+                "next_step": f"call metrics_history(metric='{metric}') and report its numbers",
+                "note": "load metrics (GPU util, power, disk, network, CPU) change with whatever the user runs, "
+                        "so unusual values there are not anomalies; say so briefly and give the numbers"}
+    table, col = METRICS[metric]
+    now = time.time()
+    since = now - int(minutes) * 60
+    with db.connect(_db_path) as conn:   # a few hours before the window so the detector has history to compare to
+        rows = conn.execute(f"SELECT ts, {col} FROM {table} WHERE ts >= ? AND {col} IS NOT NULL ORDER BY ts",
+                            (since - 6 * 3600,)).fetchall()
+    ts, vals = [r[0] for r in rows], [r[1] for r in rows]
+    inside = [i for i, t in enumerate(ts) if t >= since]
+    if len(inside) < 2:
+        return {"metric": metric, "error": "no collected data in this window; run `pcassist collect`"}
+    step = sorted(b - a for a, b in zip(ts, ts[1:]))[len(ts) // 2 - 1]
+    scored = anomaly.scores(vals, ANOMALY_WINDOW, ts)
+    games_seen = [(span, name) for name, p in _recordings().items() if (span := _recording_span(p))]
+    found = []
+    for a, b, peak in anomaly.events(scored, ANOMALY_THRESHOLD, 12, ANOMALY_MIN_RUN):
+        if ts[a] < since:
+            continue
+        seg = vals[a:b + 1]
+        typical = sorted(vals[max(0, a - ANOMALY_WINDOW):a])
+        if max(abs(v - typical[len(typical) // 2]) for v in seg) < anomaly.MIN_DEVIATION[metric]:
+            continue   # statistically unusual for a very steady metric, but too small a change to matter
+        game = next((name for (g0, g1), name in games_seen if g0 - 60 <= ts[b] and ts[a] <= g1 + 60), None)
+        found.append(_round({
+            "started": time.strftime("%Y-%m-%d %H:%M", time.localtime(ts[a])),
+            "minutes_ago": (now - ts[a]) / 60, "duration_minutes": (ts[b] - ts[a]) / 60 + step / 60,
+            "typical_value": typical[len(typical) // 2],
+            "value_at_start": vals[a], "most_unusual_value": max(seg, key=lambda v: abs(v - typical[len(typical) // 2])),
+            "z_score": min(peak, 999.0), "during_game": game}))
+    recorded = _recorded_seconds([ts[i] for i in inside]) / 60
+    out = {"metric": metric, "minutes": int(minutes), "data_covers_minutes": recorded,
+           "events_found": len(found), "events": found[-10:],
+           "ignored_if_change_smaller_than": anomaly.MIN_DEVIATION[metric],
+           "how_it_works": f"a value counts when it stays far outside the median of the previous ~{ANOMALY_WINDOW * step / 3600:.1f} h "
+                           f"for at least {ANOMALY_MIN_RUN * step / 60:.0f} min; the first ~{ANOMALY_WINDOW // 4 * step / 60:.0f} min "
+                           "after the collector (re)starts are not checked"}
+    out["summary"] = (f"{len(found)} unusual period(s) of {metric} in the last {int(minutes)} min"
+                      + (f"; the collected data covers only ~{recorded:.0f} min of that" if recorded < int(minutes) * 0.5 else ""))
+    if recorded < int(minutes) * 0.5:
+        out["warning"] = (f"collected data covers only ~{recorded:.0f} min of the requested {int(minutes)} min; "
+                          "tell the user the check is for that shorter period only")
+    return _round(out)
+
+
 def _round_deep(x):
     if isinstance(x, dict):
         return {k: _round_deep(v) for k, v in x.items()}
@@ -300,5 +385,5 @@ def _round_deep(x):
 
 
 TOOLS = [current_status, disk_usage, top_processes, metrics_history, disk_forecast, largest_folders,
-         game_sessions, game_session_report, game_sessions_compare]
+         game_sessions, game_session_report, game_sessions_compare, anomalies]
 TOOL_MAP = {f.__name__: f for f in TOOLS}

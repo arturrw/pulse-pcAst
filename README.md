@@ -8,7 +8,7 @@ changes or deletes anything.
 - [x] Stage 1: metrics collector -> SQLite
 - [x] Stage 2: LLM tools + chat via Ollama (`qwen3:8b`)
 - [x] Stage 3a: disk-fill forecast (`disk_forecast`, needs 24+ h of history to be reliable)
-- [ ] Stage 3b: anomaly detection
+- [x] Stage 3b: anomaly detection for state metrics (`anomalies`, statistical, see below)
 - [ ] Stage 4: dashboard / reports
 
 ## Requirements
@@ -128,6 +128,24 @@ The model answers only by calling these read-only tools:
 | `game_sessions` | recorded game sessions and benchmark runs (PresentMon CSV in `data/sessions`, `data/bench`) |
 | `game_session_report` | FPS, 1% / 0.1% lows, limiter, slowest 10 s stretches and hitches of one recording |
 | `game_sessions_compare` | avg FPS / lows / p99 of two recordings side by side |
+| `anomalies` | unusual periods of a state metric (GPU temperature, RAM, swap) against its recent normal; marks periods that overlap a recorded game |
+
+## Anomaly detection
+`src/pcassist/anomaly.py`: a value counts as unusual when it stays far outside the median of the previous
+~2.5 h (robust z-score on median / MAD, only past samples are used), for at least ~3 min, and moves at
+least a per-metric minimum (8 degrees, 8 points of RAM, 5 points of swap) from what was typical. A gap in the
+history (PC off) resets the window, so the first ~37 min after each start are not checked. Only state metrics
+are checked: load metrics (GPU usage, disk, network, CPU) swing whenever a game starts, so their outliers are
+just workload. It reports statistical outliers, not faults.
+
+Scored on the labeled [Numenta Anomaly Benchmark](https://github.com/numenta/NAB) (MIT license; not part of this
+repo: `git clone --depth 1 https://github.com/numenta/NAB data/nab`, only its CSV/JSON data is read, none of its
+code is run): 41 of 55 labeled windows found at 32 false alarms per 10k points with the loosest settings; requiring
+6 samples in a row gives 25 of 55 at 11 false alarms. Bursty series (disk writes, request counts) are the weak spot.
+Parameters were tuned on the same data, so treat the numbers as optimistic:
+```powershell
+python tests\eval_nab.py --sweep
+```
 
 ## Tests
 `tests/eval_tools.py` checks that the model picks the right tool for typical questions
@@ -137,5 +155,6 @@ python tests\eval_tools.py --runs 2   # add --slow to include the folder scan ca
 python tests\test_forecast.py        # unit tests for disk_forecast, no Ollama needed
 python tests\test_prune.py           # unit tests for history cleanup
 python tests\test_game_tools.py      # unit tests for the game_* chat tools
+python tests\test_anomaly.py         # detector and the anomalies tool, no Ollama needed
 python tests\test_collect_loop.py   # collector survives bad samples
 ```

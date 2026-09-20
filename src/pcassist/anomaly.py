@@ -13,6 +13,10 @@ MIN_GAP_S = 600         # a silence longer than this (and than 5x the usual samp
 # or a build, so their outliers are normal workload, not anomalies.
 STATE_METRICS = ("gpu_temp_c", "ram_percent", "ram_used_mb", "swap_percent")
 
+# A statistical outlier on a very steady metric can be a change nobody cares about (swap 2.3% -> 2.6% scores z=83).
+# An event is reported only when the value also moves at least this much from what was typical (metric's own units).
+MIN_DEVIATION = {"gpu_temp_c": 8.0, "ram_percent": 8.0, "ram_used_mb": 2500.0, "swap_percent": 5.0}
+
 
 def gap_limit(timestamps: list[float]) -> float:
     """Silence (seconds) after which the collector counts as having been off: 5x the median step, at least 10 min,

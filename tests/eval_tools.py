@@ -147,6 +147,25 @@ def game_none_answer(answer, results):
     return "FPS numbers in an answer without recordings" if re.search(r"\d+\s*(fps|кадр)", answer, re.I) else None
 
 
+def covers_stated(answer: str, minutes: float) -> bool:
+    """The coverage in minutes ("345") or as hours and minutes ("5 часов 45 минут")."""
+    return num_in(answer, minutes) or (num_in(answer, minutes // 60) and num_in(answer, round(minutes % 60)))
+
+
+def anomalies_answer(answer, results):
+    r = first(results, "anomalies")
+    if "error" in r:
+        return None
+    if r["events_found"] == 0 and not re.search(r"не (?:было|найден|обнаружен|выявл)|нет |ничего|не замет|отсутств", answer, re.I):
+        return "no events found but the answer does not say that"
+    if "warning" in r and not covers_stated(answer, r["data_covers_minutes"]):
+        return f"short coverage ({r['data_covers_minutes']} min) not stated in answer"
+    for e in r["events"][:3]:
+        if not num_in(answer, e["most_unusual_value"]):
+            return f"event value {e['most_unusual_value']} not in answer"
+    return None
+
+
 COMMON = [no_markdown, no_double_backslash]
 
 # (question, must call, must NOT call, extra answer checks, db override)
@@ -167,6 +186,11 @@ CASES = [
      [game_report_answer], None),
     ("сравни записи combo_base_1 и combo_fsr3_1", {"game_sessions_compare"}, set(), [game_compare_answer], None),
     ("покажи FPS в последней игре", {"game_sessions"}, {"game_session_report"}, [game_none_answer], "EMPTY"),
+    ("было ли за последние сутки что-то странное с температурой видеокарты?", {"anomalies"}, set(),
+     [anomalies_answer], None),
+    ("были ли аномалии в использовании оперативной памяти за последние сутки?", {"anomalies"}, set(),
+     [anomalies_answer], None),
+    ("были ли аномалии в загрузке видеокарты за сутки?", set(), set(), [], None),   # load metric: any sane answer, no crash
 ]
 SLOW_CASES = [
     ("что занимает место на диске C?", {"largest_folders"}, {"disk_usage"}, [folders_answer], None),
@@ -217,7 +241,12 @@ def main() -> int:
                 problems.append(f"expected but not called: {sorted(must - called)}")
             if must_not & called:
                 problems.append(f"must not be called: {sorted(must_not & called)}")
-            problems += [m for c in COMMON + checks if (m := c(answer, results))]
+            for c in COMMON + checks:
+                try:
+                    if m := c(answer, results):
+                        problems.append(m)
+                except (KeyError, IndexError, TypeError) as e:   # e.g. the expected tool was not called at all
+                    problems.append(f"{c.__name__} could not check the answer ({type(e).__name__}: {e})")
             failures += bool(problems)
             print(f"[{'FAIL' if problems else 'PASS'}] {label}  -> {sorted(called)}")
             for m in problems:

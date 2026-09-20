@@ -258,7 +258,7 @@ The model answers only by calling these read-only tools:
 
 ## Scope and safety of the assistant
 What if you tell the chat to "forget all previous rules", to write a poem or code, or to delete something?
-- **It cannot do damage.** The model only calls twelve read-only tools; none of them deletes, changes, runs or sends
+- **It cannot do damage.** The model only calls thirteen read-only tools; none of them deletes, changes, runs or sends
   anything, and their arguments are restricted (metric names from a fixed list, recordings looked up by name, folder
   scans only on local fixed drives: `..` and links are resolved first, network shares and device paths are refused;
   your own `pcassist scan` command is not restricted). The

@@ -63,6 +63,13 @@ def test_unusual_ram_period_is_reported_once_it_is_recent():
     assert not [a for a in alerts.collect_alerts() if "ram_used_mb" in a.key]      # one event, one alert (not also in MB)
 
 
+def test_unusual_but_not_high_ram_is_left_to_the_report():
+    _db(ram_tail=70.0)                               # +20 points is unusual for this machine, 70% is not a problem
+    assert not [a for a in alerts.collect_alerts() if a.key.startswith("unusual-")]
+    with_report = tools.metrics_history("ram_percent", 120)
+    assert with_report["unusual_periods_found"] == 1  # still visible in the report and in the chat
+
+
 def test_cooldown_skips_repeats_and_lets_them_through_later():
     a = alerts.Alert("k", "high", "t", "b")
     now = 1_000_000.0

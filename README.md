@@ -124,7 +124,9 @@ still needs a human check: Task Manager -> Open file location, and a Windows Def
 `pcassist alerts` checks the history once and shows a Windows notification (also written to `data/alerts.log` and
 listed in the report) for things worth interrupting you for: the collector stopped recording, a GPU at 85 C or more
 for 5 minutes, a disk with under 15 GB (or 5%) free or a 14-day fill-up forecast, an unusual stretch of temperature /
-RAM / swap that is not explained by a game, and the serious findings of `process_watch` (a disguised or tampered
+RAM / swap that is also high (RAM at 85% or more, GPU at 80 C or more, swap at 20% or more) and not explained by a
+game (an unusual but harmless jump, say RAM going from 47% to 62% while a model loads, stays in the report only),
+and the serious findings of `process_watch` (a disguised or tampered
 file, a suspicious file using the network, a connection to a mining-pool / Tor / IRC port, a program that started
 listening for incoming connections, a process using 40% of the CPU, memory growing 1 GB/h). The same alert is not repeated for 6 h (serious) or
 24 h (the rest). A name that is merely new is not alerted: that evidence is too weak.

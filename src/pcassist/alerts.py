@@ -4,8 +4,8 @@ One call = one check (Task Scheduler runs it every 15 minutes). Findings go to a
 data/alerts.log; the same finding is not repeated for a while (data/alerts_state.json). Read-only: it only reads
 the history and shows a message, it never changes or stops anything.
 
-Only things worth interrupting for are alerted: a stopped collector, a hot GPU, a nearly full disk, an unusual
-stretch of temperature / RAM / swap, and the serious findings of process_watch (a disguised or tampered file,
+Only things worth interrupting for are alerted: a stopped collector, a hot GPU, a nearly full disk, an unusual AND
+high stretch of temperature / RAM / swap, and the serious findings of process_watch (a disguised or tampered file,
 a process eating the CPU). Weak evidence (a process name that is merely new) is left for the report."""
 import json
 import os
@@ -84,6 +84,9 @@ def check_disks(now: float) -> list[Alert]:
 
 # ram_used_mb is the same event as ram_percent in other units: alerting on both would show two notifications for one thing
 ALERT_METRICS = tuple(m for m in anomaly.STATE_METRICS if m != "ram_used_mb")
+# An unusual value is only worth an interruption when it is also high: RAM going from 47% to 62% because a model was
+# loaded harms nothing, RAM at 90% does. Below these levels the event stays in the report, without a notification.
+ALERT_MIN_LEVEL = {"ram_percent": 85.0, "gpu_temp_c": 80.0, "swap_percent": 20.0}
 
 
 def check_unusual(now: float) -> list[Alert]:
@@ -93,6 +96,8 @@ def check_unusual(now: float) -> list[Alert]:
         for e in r.get("events", []):
             if e["during_game"] or e["minutes_ago"] > 90:
                 continue   # a game explains high RAM/swap; older events were already reported
+            if e["most_unusual_value"] < ALERT_MIN_LEVEL[metric]:
+                continue   # unusual but not high: report only
             out.append(Alert(f"unusual-{metric}-{e['started']}", "medium", f"Unusual {metric}",
                              f"Since {e['started']} for {e['duration_minutes']:.0f} min: typically "
                              f"{e['typical_value']:.0f}, up to {e['most_unusual_value']:.0f}."))

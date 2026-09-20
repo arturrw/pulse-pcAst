@@ -29,6 +29,19 @@ def set_db(path) -> None:
     _db_path = path
 
 
+MIN_GAP_S = 600  # a silence longer than this (and than 5x the usual sample step) means the collector was not running
+
+
+def _recorded_seconds(timestamps: list[float]) -> float:
+    """Time actually covered by samples: long gaps (PC off/asleep) are not counted, unlike last - first.
+    A gap is anything over 5x the median step, so a collector run with a long --interval still counts."""
+    steps = [b - a for a, b in zip(timestamps, timestamps[1:])]
+    if not steps:
+        return 0.0
+    limit = max(MIN_GAP_S, 5 * sorted(steps)[len(steps) // 2])
+    return sum(x for x in steps if x <= limit)
+
+
 def _round(d: dict) -> dict:
     return {k: round(v, 1) if isinstance(v, float) else v for k, v in d.items()}
 
@@ -92,12 +105,13 @@ def metrics_history(metric: str, minutes: int = 60) -> dict:
     table, col = METRICS[metric]
     since = time.time() - int(minutes) * 60
     with db.connect(_db_path) as conn:
-        n, lo, avg, hi, first_ts, last_ts = conn.execute(
-            f"SELECT COUNT({col}), MIN({col}), AVG({col}), MAX({col}), MIN(ts), MAX(ts) FROM {table} WHERE ts >= ?",
+        n, lo, avg, hi, last_ts = conn.execute(
+            f"SELECT COUNT({col}), MIN({col}), AVG({col}), MAX({col}), MAX(ts) FROM {table} WHERE ts >= ?",
             (since,),
         ).fetchone()
         last = conn.execute(f"SELECT {col} FROM {table} ORDER BY ts DESC LIMIT 1").fetchone()
         if n:
+            stamps = [t for (t,) in conn.execute(f"SELECT ts FROM {table} WHERE ts >= ? ORDER BY ts", (since,))]
             peak_ts = conn.execute(
                 f"SELECT ts FROM {table} WHERE ts >= ? AND {col} = ? ORDER BY ts DESC LIMIT 1", (since, hi)
             ).fetchone()[0]
@@ -106,7 +120,7 @@ def metrics_history(metric: str, minutes: int = 60) -> dict:
             ).fetchone()
     if not n:
         return {"metric": metric, "error": "no collected data in this window; run `pcassist collect`"}
-    covers = (last_ts - first_ts) / 60
+    covers = _recorded_seconds(stamps) / 60   # recorded time, not the span: the PC may have been off in between
     result = {"metric": metric, "minutes": int(minutes), "samples": n,
               "data_covers_minutes": covers,
               "newest_sample_minutes_ago": (time.time() - last_ts) / 60,
@@ -149,11 +163,13 @@ def disk_forecast(days: int = 30) -> list[dict]:
         for mount in sorted(mounts):
             pts = conn.execute("SELECT ts, used_gb, total_gb FROM disk_usage WHERE mount = ? AND ts >= ? ORDER BY ts",
                                (mount, since)).fetchall()
-            hours = (pts[-1][0] - pts[0][0]) / 3600
+            stamps = [t for t, _, _ in pts]
+            hours = _recorded_seconds(stamps) / 3600       # time actually recorded, gaps (PC off) not counted
+            span = (stamps[-1] - stamps[0]) / 3600
             used, total = pts[-1][1], pts[-1][2]
             row = {"disk": mount.rstrip("\\"), "used_gb": used, "free_gb": total - used,
-                   "history_hours": hours, "confidence": "ok" if hours >= MIN_FORECAST_HOURS else "low"}
-            if len(pts) < 2 or hours <= 0:
+                   "history_hours": hours, "span_hours": span, "confidence": "ok" if hours >= MIN_FORECAST_HOURS else "low"}
+            if len(pts) < 2 or span <= 0:
                 row["note"] = "not enough samples for a trend"
             else:
                 rate = _slope_per_day([(t, u) for t, u, _ in pts])
@@ -163,8 +179,9 @@ def disk_forecast(days: int = 30) -> list[dict]:
                 else:
                     row["note"] = "usage is not growing, no fill-up expected"
             if row["confidence"] == "low":
-                row["warning"] = (f"only {hours:.1f} h of history (need {MIN_FORECAST_HOURS}+ h); "
-                                  "tell the user this estimate is unreliable")
+                row["warning"] = (f"only {hours:.1f} h of recorded history"
+                                  + (f" over a {span:.0f} h span (the collector was off in between)" if span > 1.5 * hours + 1 else "")
+                                  + f" (need {MIN_FORECAST_HOURS}+ h); tell the user this estimate is unreliable")
             out.append(_round(row))
     if not out:
         return [{"error": "no collected data in this window; run `pcassist collect`"}]

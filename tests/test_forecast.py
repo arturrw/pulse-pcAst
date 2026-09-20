@@ -24,7 +24,7 @@ def _forecast(path: Path) -> dict:
 
 def test_growing_disk_with_enough_history():
     # 10 GB/day for 3 days, currently 700 of 1000 GB used -> 30 days left
-    rows = [(h, 700 - 10 * h / 24) for h in range(72, -1, -6)]
+    rows = [(h / 12, 700 - 10 * h / 12 / 24) for h in range(864, -1, -1)]   # a sample every 5 min
     r = _forecast(_make_db({"C:\\": rows}))["C:"]
     assert r["confidence"] == "ok" and "warning" not in r
     assert abs(r["growth_gb_per_day"] - 10) < 0.2
@@ -34,6 +34,25 @@ def test_growing_disk_with_enough_history():
 def test_short_history_is_flagged_low_confidence():
     r = _forecast(_make_db({"C:\\": [(1.0, 500.0), (0.5, 500.4), (0.0, 500.8)]}))["C:"]
     assert r["confidence"] == "low" and "unreliable" in r["warning"]
+
+
+def test_gaps_do_not_count_as_history():
+    # 3-day span but only two 3 h stretches recorded, so the forecast must stay low confidence
+    rows = [(72 - i / 12, 500 + i * 0.01) for i in range(36)] + [(3 - i / 12, 510 + i * 0.01) for i in range(36)]
+    r = _forecast(_make_db({"C:\\": rows}))["C:"]
+    assert r["confidence"] == "low" and 5 < r["history_hours"] < 6.5 and r["span_hours"] > 60
+    assert "recorded history" in r["warning"] and "collector was off" in r["warning"]
+
+
+def test_metrics_history_coverage_ignores_gaps():
+    path = Path(tempfile.mkdtemp()) / "t.db"
+    now = time.time()
+    with db.connect(path) as conn:   # 5 min of samples every 30 s, a 40 min hole, 5 more minutes
+        stamps = [now - 3000 + 30 * i for i in range(11)] + [now - 300 + 30 * i for i in range(11)]
+        conn.executemany("INSERT INTO system_metrics (ts, cpu_percent) VALUES (?, 10)", [(t,) for t in stamps])
+    tools.set_db(path)
+    r = tools.metrics_history("cpu_percent", 60)
+    assert 9 < r["data_covers_minutes"] < 11 and "warning" in r   # 10 recorded min of the requested 60
 
 
 def test_flat_or_shrinking_disk_has_no_fill_date():

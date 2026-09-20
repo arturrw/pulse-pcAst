@@ -4,7 +4,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from pcassist import db, report, tools
+from pcassist import db, persistence, report, tools, winhealth
+
+
+# These tests must not read this machine's event logs or autostart entries: both sources are empty here.
+winhealth.read_raw = lambda hours: {}
+persistence.read_items = lambda: []
 
 
 def _db(samples: int = 400, jump: float | None = 80.0, proc: str = "chrome.exe") -> Path:
@@ -59,6 +64,36 @@ def test_a_gap_splits_the_line_and_a_short_recording_is_reported():
     assert [len(s) for s in report.segments(pts)] == [20, 20]
     _db(samples=100)
     assert "recorded only" in report.build_report(24)    # 100 samples = under an hour of a 24 h period
+
+
+def test_health_and_startup_sections_show_findings_and_mark_accepted_ones():
+    from datetime import datetime, timedelta
+
+    from pcassist import ack
+
+    path = _db()
+    iso = lambda m: (datetime.now() - timedelta(minutes=m)).strftime("%Y-%m-%dT%H:%M:%S.0+03:00")
+    real_raw, real_items = winhealth.read_raw, persistence.read_items
+    winhealth.read_raw = lambda hours: {"defender": {"service": True, "antivirus": True, "realtime": False, "tamper_protected": True,
+                                                     "signatures": iso(60), "quick_scan": iso(600), "full_scan": None}}
+    try:
+        html = report.build_report(2)
+        assert "System health" in html and "real-time protection <span class='warn'>OFF</span>" in html
+        assert "Defender real-time protection is OFF" in html and "<span class='warn'>high</span>" in html
+        ack.acknowledge(path, "defender-realtime-off", "on purpose")
+        html = report.build_report(2)
+        assert "accepted since" in html and "on purpose" in html and "<span class='warn'>high</span>" not in html.split("System health")[1].split("Startup changes")[0]
+        # startup: an old baseline, then a new hidden-script entry
+        conn = db.connect(path)
+        base = {"kind": "service", "name": "Known", "command": "C:" + chr(92) + "Windows" + chr(92) + "k.exe", "detail": ""}
+        persistence.snapshot(conn, now=time.time() - 3600, reader=lambda: [base])
+        bad = {"kind": "scheduled_task", "name": chr(92) + "Sneaky", "detail": "",
+               "command": "wscript.exe //B " + chr(34) + "C:" + chr(92) + "x" + chr(92) + "run.vbs" + chr(34)}
+        persistence.snapshot(conn, now=time.time() - 60, reader=lambda: [base, bad])
+        html = report.build_report(2)
+    finally:
+        winhealth.read_raw, persistence.read_items = real_raw, real_items
+    assert "Startup changes" in html and "Sneaky" in html and "script host" in html
 
 
 def test_chart_axes_never_go_below_zero_for_percent():

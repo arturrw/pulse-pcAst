@@ -6,7 +6,12 @@ from pathlib import Path
 
 import psutil
 
-from pcassist import alerts, binaries, collectors, db, netwatch, tools
+from pcassist import alerts, binaries, collectors, db, netwatch, persistence, tools, winhealth
+
+
+# These tests must not read this machine's event logs or autostart entries: both sources are empty here.
+winhealth.read_raw = lambda hours: {}
+persistence.read_items = lambda: []
 
 DAY = 86400.0
 Addr = namedtuple("Addr", "ip port")

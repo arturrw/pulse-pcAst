@@ -4,7 +4,12 @@ import tempfile
 import time
 from pathlib import Path
 
-from pcassist import alerts, binaries, db, tools
+from pcassist import ack, alerts, binaries, db, persistence, tools, winhealth
+
+
+# These tests must not read this machine's event logs or autostart entries: both sources are empty here.
+winhealth.read_raw = lambda hours: {}
+persistence.read_items = lambda: []
 
 
 def _db(*, gpu_temp: float = 60.0, last_sample_ago: float = 30.0, disk_used: float = 400.0, ram_tail: float | None = None,
@@ -68,6 +73,54 @@ def test_unusual_but_not_high_ram_is_left_to_the_report():
     assert not [a for a in alerts.collect_alerts() if a.key.startswith("unusual-")]
     with_report = tools.metrics_history("ram_percent", 120)
     assert with_report["unusual_periods_found"] == 1  # still visible in the report and in the chat
+
+
+def _raw_health(*, realtime=True, shutdown_minutes_ago=None) -> dict:
+    from datetime import datetime, timedelta
+    iso = lambda m: (datetime.now() - timedelta(minutes=m)).strftime("%Y-%m-%dT%H:%M:%S.0+03:00")
+    power = [{"t": iso(shutdown_minutes_ago), "id": 41}] if shutdown_minutes_ago is not None else []
+    return {"power": power, "hardware": [], "disk": [], "display": [], "crashes": [], "defender_events": [], "threats": [],
+            "defender": {"service": True, "antivirus": True, "realtime": realtime, "tamper_protected": True,
+                         "signatures": iso(60), "quick_scan": iso(600), "full_scan": None}}
+
+
+def test_windows_health_findings_alert_once_a_day_and_accepted_ones_stay_silent():
+    path = _db()
+    real = winhealth.read_raw
+    winhealth.read_raw = lambda hours: _raw_health(realtime=False, shutdown_minutes_ago=30)
+    try:
+        found = {a.key: a for a in alerts.collect_alerts() if a.key.startswith("health:")}
+        assert "health:defender-realtime-off" in found and found["health:defender-realtime-off"].severity == "high"
+        assert found["health:defender-realtime-off"].cooldown_hours == 24.0                 # a lasting state: daily, not every 6 h
+        assert any(k.startswith("health:unexpected-shutdown:") for k in found)
+        sent = alerts.Alert("k", "high", "t", "b", cooldown_hours=24.0)
+        assert alerts.select_new([sent], {"k": 1_000_000.0 - 7 * 3600}, 1_000_000.0) == []  # 7 h ago: still quiet
+        ack.acknowledge(path, "defender-realtime-off", "my choice")
+        after = {a.key for a in alerts.collect_alerts() if a.key.startswith("health:")}
+    finally:
+        winhealth.read_raw = real
+    assert "health:defender-realtime-off" not in after and any(k.startswith("health:unexpected-shutdown:") for k in after)
+
+
+def test_a_new_suspicious_autostart_entry_alerts_but_the_baseline_and_accepted_entries_do_not():
+    path = _db()
+    real = persistence.read_items
+    known = {"kind": "service", "name": "Known", "command": "C:" + chr(92) + "Windows" + chr(92) + "k.exe", "detail": ""}
+    bad = {"kind": "scheduled_task", "name": chr(92) + "Updater", "detail": "",
+           "command": "powershell.exe -NoProfile -enc " + "QQBBAEEAQQBBAEEAQQBBAEEAQQBBAEEAQQ=="}
+    try:
+        persistence.read_items = lambda: [known]
+        assert [a for a in alerts.collect_alerts() if a.key.startswith("autorun:")] == []      # first snapshot = baseline
+        conn = db.connect(path)
+        conn.execute("UPDATE autoruns SET first_seen = first_seen - 600, last_seen = last_seen - 600")   # make the baseline older
+        conn.commit()
+        persistence.read_items = lambda: [known, bad]
+        found = [a for a in alerts.collect_alerts() if a.key.startswith("autorun:")]
+        assert len(found) == 1 and found[0].severity == "high" and "encoded PowerShell" in found[0].body
+        ack.acknowledge(path, "autorun:scheduled_task:" + chr(92) + "Updater", "mine")
+        assert [a for a in alerts.collect_alerts() if a.key.startswith("autorun:")] == []
+    finally:
+        persistence.read_items = real
 
 
 def test_cooldown_skips_repeats_and_lets_them_through_later():

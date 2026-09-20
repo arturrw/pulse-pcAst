@@ -170,6 +170,41 @@ def watch(hours: float) -> str:
               f"Not a malware scan: check anything odd yourself (Task Manager → Open file location, a Defender scan).{escape(minor)}</p>")
 
 
+def _finding_rows(items: list[dict], title_key: str, detail_fn) -> list[list[str]]:
+    rows = []
+    for x in items:
+        status = (f"<span class='mute'>accepted since {escape(x.get('accepted_since', ''))}"
+                  f"{(': ' + escape(x['accepted_note'])) if x.get('accepted_note') else ''}</span>") if x.get("accepted")             else f"<span class='warn'>{escape(x['severity'])}</span>"
+        rows.append([escape(str(x[title_key])), escape(detail_fn(x)), status])
+    return rows
+
+
+def health_section(hours: float) -> str:
+    r = tools.system_health(int(hours))
+    if not r.get("available"):
+        return ""
+    d = r["defender"]
+    line = ""
+    if d.get("available"):
+        state = "on" if d.get("realtime_protection") else "<span class='warn'>OFF</span>"
+        line = (f"<p>Defender: real-time protection {state}, signatures {d.get('signatures_age_days', '?')} days old, "
+                f"last full scan {escape(str(d.get('last_full_scan') or 'never'))}.</p>")
+    rows = _finding_rows(r["findings"], "title", lambda x: x["detail"])
+    body = _table(["finding", "detail", "status"], rows) if rows else "<p class='ok'>Nothing wrong in the Windows logs.</p>"
+    return f"<h2>System health (Windows logs, Defender)</h2>{line}{body}<p class='mute'>{escape(r['note'])}</p>"
+
+
+def startup_section(hours: float) -> str:
+    r = tools.startup_changes(int(hours))
+    if not r.get("available"):
+        return ""
+    items = r["new_or_changed"] + r["already_present_but_suspicious"]
+    rows = _finding_rows(items, "name", lambda x: f"{x['kind'].replace('_', ' ')}: " + "; ".join(x["reasons"] or ["new entry"]) + f" ({x['command'][:80]})")
+    known = sum(r["entries_known"].values())
+    body = _table(["entry", "what stands out", "status"], rows) if rows else         f"<p class='ok'>No new or suspicious autostart entries ({known} entries known since {escape(r['baseline_at'])}).</p>"
+    return f"<h2>Startup changes</h2>{body}<p class='mute'>Run keys, startup folders, scheduled tasks and services; only changes after the first snapshot are reported.</p>"
+
+
 def alerts_section() -> str:
     lines = alerts.recent_log(tools._db_path)
     if not lines:
@@ -230,7 +265,7 @@ def build_report(hours: float = 24, now: float | None = None) -> str:
         cov = (f"<p class='warn'>The collector recorded only {recorded:.1f} h of these {hours:g} h "
                "(the PC was off or asleep in between); gaps are left blank.</p>") if recorded < hours * 0.8 else ""
         charts = "".join(chart(m, t, u, hours, now) for m, t, u in CHARTS)
-        body = "".join(f"<section>{s}</section>" for s in (cov + overview(hours, now), unusual(hours), alerts_section(), watch(hours), charts,
+        body = "".join(f"<section>{s}</section>" for s in (cov + overview(hours, now), unusual(hours), alerts_section(), health_section(hours), startup_section(hours), watch(hours), charts,
                                                           disks(), processes(hours), games()) if s)
     return (f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>PC report</title><style>{STYLE}</style></head><body><main><h1>PC report</h1>"

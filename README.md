@@ -120,6 +120,32 @@ never opens a connection is invisible to it, and there is no parent process or a
 still needs a human check: Task Manager -> Open file location, and a Windows Defender scan. Thresholds are in
 `src/pcassist/procwatch.py`, `src/pcassist/binaries.py` and `src/pcassist/netwatch.py`.
 
+## Windows health, autostart and the timeline
+Three read-only tools that ask Windows itself (PowerShell, no administrator rights needed):
+- **`system_health`** reads the Application, System and Defender event logs and Defender's status: blue screens,
+  unexpected shutdowns, WHEA hardware errors, disk and graphics-driver errors, apps that keep crashing, whether
+  real-time protection is on, how old the signatures are, what Defender detected. The Security log (failed logins)
+  needs administrator rights and is not read.
+- **`startup_changes`** takes a snapshot of everything that starts by itself (Run keys, startup folders, scheduled
+  tasks, services) every time the alert job runs. The **first snapshot is only a baseline**; afterwards every new or
+  changed entry is reported, and flagged when its command hides what it runs (an encoded PowerShell command, a
+  hidden script host, a download-and-run trick, a web address), starts from Temp / Downloads, or points at a file
+  with a broken signature. A new autostart entry is one of the strongest signs of malware, and installers add
+  entries too, so it is a hint for a human look, not a verdict. This is the check that finds a scheduled task
+  disguised as an "update" that silently starts a script: the kind of thing `process_watch` cannot see, because such a
+  program is quiet.
+- **`what_happened`** answers "what happened at 14:03" / "why did it freeze last night": one timeline of metric
+  changes, processes and network destinations seen for the first time, new autostart entries, alerts sent, game
+  recordings, gaps when the PC was off, and Windows events. It lines things up in time and does not say what caused
+  what.
+
+**Accepted risks.** If you know about a finding and accept it (say a game booster that switches Defender off on
+purpose), tell the assistant once: `pcassist ack defender-realtime-off --note "why"`. It then stops alerting, and the
+tools and the report show it as *accepted* with your note and the date, so it is never invisible. `pcassist ack` lists
+them, `pcassist ack --forget <id>` makes a finding count again, an id ending in `*` matches a prefix. The ids are in the
+tool output (`id` on every finding, like `defender-realtime-off` or `autorun:scheduled_task:<name>`). This changes
+nothing on the machine.
+
 ## Alerts
 `pcassist alerts` checks the history once and shows a Windows notification (also written to `data/alerts.log` and
 listed in the report) for things worth interrupting you for: the collector stopped recording, a GPU at 85 C or more
@@ -129,7 +155,9 @@ game (an unusual but harmless jump, say RAM going from 47% to 62% while a model 
 and the serious findings of `process_watch` (a disguised or tampered
 file, a suspicious file using the network, a connection to a mining-pool / Tor / IRC port, a program that started
 listening for incoming connections, a process using 40% of the CPU, memory growing 1 GB/h). The same alert is not repeated for 6 h (serious) or
-24 h (the rest). A name that is merely new is not alerted: that evidence is too weak.
+24 h (the rest). A name that is merely new is not alerted: that evidence is too weak. Windows findings (a crash
+or blue screen, Defender off or detecting something, a hardware error) and a new suspicious autostart entry are alerted
+too, once a day at most, unless you accepted them (`pcassist ack`).
 ```powershell
 pcassist alerts --test                                     # show a test notification
 pcassist alerts --dry-run                                  # print what would be sent, send and remember nothing
@@ -223,11 +251,14 @@ The model answers only by calling these read-only tools:
 | `game_sessions` | recorded game sessions and benchmark runs (PresentMon CSV in `data/sessions`, `data/bench`) |
 | `game_session_report` | FPS, 1% / 0.1% lows, limiter, slowest 10 s stretches and hitches of one recording |
 | `game_sessions_compare` | avg FPS / lows / p99 of two recordings side by side |
+| `system_health` | what Windows itself recorded: blue screens, unexpected shutdowns, hardware / disk / graphics-driver errors, apps that keep crashing, and the state of Defender (real-time protection, signatures, detections) |
+| `startup_changes` | what starts by itself (Run keys, startup folders, scheduled tasks, services) and what is new or looks wrong since the first snapshot |
+| `what_happened` | one moment on a timeline: metric changes, new processes and connections, new autostart entries, alerts, game recordings, gaps, Windows events |
 | `process_watch` | processes that stand out against their own history: never recorded before, far more CPU than usual, memory growing (behavioral only, not a malware scan) |
 
 ## Scope and safety of the assistant
 What if you tell the chat to "forget all previous rules", to write a poem or code, or to delete something?
-- **It cannot do damage.** The model only calls nine read-only tools; none of them deletes, changes, runs or sends
+- **It cannot do damage.** The model only calls twelve read-only tools; none of them deletes, changes, runs or sends
   anything, and their arguments are restricted (metric names from a fixed list, recordings looked up by name, folder
   scans only on local fixed drives: `..` and links are resolved first, network shares and device paths are refused;
   your own `pcassist scan` command is not restricted). The
@@ -293,6 +324,10 @@ python tests\test_report.py          # HTML report (sections, escaping, gaps), n
 python tests\test_procwatch.py       # process behavior and file location/signature checks, synthetic data, no Ollama
 python tests\test_netwatch.py        # network findings and connection recording, no Ollama needed
 python tests\test_scan_guard.py      # path check on the model-facing folder scan, no Ollama needed
+python tests\test_winhealth.py       # Windows event log / Defender findings from recorded data, no Ollama needed
+python tests\test_persistence.py     # autostart snapshot, baseline and suspicious-command checks, no Ollama needed
+python tests\test_ack.py             # accepted risks, no Ollama needed
+python tests\test_timeline.py        # time parsing and the timeline of one moment, no Ollama needed
 python tests\test_alerts.py          # alert checks, cooldown and notification log, no Ollama needed
 python tests\test_collect_loop.py   # collector survives bad samples
 ```

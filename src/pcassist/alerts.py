@@ -14,7 +14,9 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import anomaly, db, tools
+import zlib
+
+from . import ack, anomaly, db, persistence, tools
 
 TEMP_ALERT_C = 85.0          # the RTX 3070 Ti starts throttling in the low 80s
 TEMP_SAMPLES = 10            # the last ~5 min must all be this hot, one spike is not an alert
@@ -43,6 +45,7 @@ class Alert:
     severity: str     # high | medium
     title: str
     body: str
+    cooldown_hours: float | None = None   # overrides the severity default (state alerts repeat once a day at most)
 
 
 def check_collector(conn, now: float) -> list[Alert]:
@@ -139,13 +142,52 @@ def check_processes(now: float) -> list[Alert]:
     return out
 
 
+STATE_FINDINGS = ("defender-", "defender-threat:")      # a condition that stays: repeat at most daily
+
+
+def check_health(now: float) -> list[Alert]:
+    """Windows' own view: crashes, shutdowns, hardware errors and the state of Defender. Accepted findings stay silent."""
+    r = tools.system_health(24)
+    if not r.get("available"):
+        return []
+    out = []
+    for f in r["findings"]:
+        if f["accepted"]:
+            continue
+        state = f["id"].startswith(STATE_FINDINGS)
+        key = f"health:{f['id']}" if state else f"health:{f['id']}:{zlib.crc32(f['detail'].encode()):08x}"
+        out.append(Alert(key, f["severity"], f["title"], f["detail"], cooldown_hours=24.0))
+    return out
+
+
+def check_startup(now: float) -> list[Alert]:
+    """A new or changed autostart entry that looks wrong. The first snapshot is only the baseline."""
+    with db.connect(tools._db_path) as conn:
+        persistence.snapshot(conn, reader=persistence.read_items)
+    r = tools.startup_changes(24)
+    if not r.get("available"):
+        return []
+    out = []
+    for x in r["new_or_changed"]:
+        if x["accepted"] or x["severity"] == "low":
+            continue
+        why = "; ".join(x["reasons"]) or "new entry"
+        changed = f" It replaced: {x['changed_from']}." if x.get("changed_from") else ""
+        out.append(Alert(f"autorun:{x['kind']}:{x['name']}:{zlib.crc32(x['command'].encode()):08x}", x["severity"],
+                         f"New autostart entry: {x['name']}",
+                         f"{x['kind'].replace('_', ' ')} runs {x['command'][:120]}. {why}.{changed} Installers add entries too: "
+                         "check it before trusting or removing it."))
+    return out
+
+
 def collect_alerts(now: float | None = None) -> list[Alert]:
     """All current findings (before the cooldown). A failing check is skipped, it must not hide the others."""
     now = time.time() if now is None else now
     found: list[Alert] = []
     with db.connect(tools._db_path) as conn:
         for check in (lambda: check_collector(conn, now), lambda: check_gpu_temp(conn, now),
-                      lambda: check_disks(now), lambda: check_unusual(now), lambda: check_processes(now)):
+                      lambda: check_disks(now), lambda: check_unusual(now), lambda: check_processes(now),
+                      lambda: check_health(now), lambda: check_startup(now)):
             try:
                 found += check()
             except Exception as e:   # noqa: BLE001 - one broken check must not silence the rest
@@ -156,7 +198,8 @@ def collect_alerts(now: float | None = None) -> list[Alert]:
 
 def select_new(alerts: list[Alert], state: dict[str, float], now: float) -> list[Alert]:
     """Drop what was already sent within its cooldown."""
-    return [a for a in alerts if now - state.get(a.key, 0.0) >= COOLDOWN_HOURS[a.severity] * 3600]
+    return [a for a in alerts
+            if now - state.get(a.key, 0.0) >= (a.cooldown_hours or COOLDOWN_HOURS[a.severity]) * 3600]
 
 
 def notify(title: str, body: str) -> bool:

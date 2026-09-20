@@ -34,6 +34,32 @@ def _dir_size(root: str, deadline: float) -> tuple[int, bool]:
 
 
 _BARE_DRIVE = re.compile(r"^[A-Za-z]:$")
+_ABSOLUTE_LOCAL = re.compile(r"^[A-Za-z]:[\\/]")
+
+
+def check_model_path(path: str, fixed_drives: set[str]) -> tuple[str | None, str | None]:
+    """Vet a path the language model wants scanned. Returns (resolved path, None) or (None, why not).
+
+    Only an absolute path on a local fixed drive is accepted: no network share (UNC), no device or extended-length
+    path (\\\\?\\, \\\\.\\), no relative path, no control characters. ".." and links are resolved first, so the check
+    applies to where the path really leads. `fixed_drives` are drive roots like "C:\\\\"."""
+    if not isinstance(path, str) or not path.strip():
+        return None, "empty path"
+    path = path.strip()
+    if any(ord(c) < 32 for c in path):
+        return None, "the path contains control characters"
+    if not _ABSOLUTE_LOCAL.match(path):
+        return None, "only an absolute path on a local drive is allowed, like C:\\ or C:\\Users"
+    try:
+        real = os.path.realpath(path)
+    except (OSError, ValueError):
+        return None, "the path cannot be resolved"
+    drive = os.path.splitdrive(real)[0].upper()
+    if not drive or drive.startswith("\\\\") or drive + "\\" not in {d.upper() for d in fixed_drives}:
+        return None, f"'{drive or path}' is not a local fixed drive"
+    if not os.path.isdir(real):
+        return None, f"'{path}' is not a directory"
+    return real, None
 
 
 def largest_children(path: str, limit: int = 10, max_seconds: int = 45) -> dict:

@@ -219,7 +219,7 @@ The model answers only by calling these read-only tools:
 | `top_processes` | heaviest processes over a recent window (from history) |
 | `metrics_history` | min/avg/max/latest, when the max happened and the change over the last 10 min (from history); for GPU temperature, RAM and swap also the unusual periods (see below) |
 | `disk_forecast` | growth in GB/day and days until each disk is full (linear trend; flagged unreliable under 24 h of history) |
-| `largest_folders` | what takes the most space in a directory (scan up to ~45 s) |
+| `largest_folders` | what takes the most space in a directory (scan up to ~45 s; only absolute paths on local drives, no network shares or device paths, at most 25 rows) |
 | `game_sessions` | recorded game sessions and benchmark runs (PresentMon CSV in `data/sessions`, `data/bench`) |
 | `game_session_report` | FPS, 1% / 0.1% lows, limiter, slowest 10 s stretches and hitches of one recording |
 | `game_sessions_compare` | avg FPS / lows / p99 of two recordings side by side |
@@ -228,7 +228,9 @@ The model answers only by calling these read-only tools:
 ## Scope and safety of the assistant
 What if you tell the chat to "forget all previous rules", to write a poem or code, or to delete something?
 - **It cannot do damage.** The model only calls nine read-only tools; none of them deletes, changes, runs or sends
-  anything, and their arguments are restricted (metric names from a fixed list, recordings looked up by name). The
+  anything, and their arguments are restricted (metric names from a fixed list, recordings looked up by name, folder
+  scans only on local fixed drives: `..` and links are resolved first, network shares and device paths are refused;
+  your own `pcassist scan` command is not restricted). The
   worst a fooled model can produce is a wrong sentence. The system prompt is in this repository, so there is nothing
   secret to leak.
 - **Text found in your data is not trusted.** Process names, file names and paths come from the machine, so a
@@ -290,6 +292,7 @@ python tests\test_anomaly.py         # detector and the unusual-period check, no
 python tests\test_report.py          # HTML report (sections, escaping, gaps), no Ollama needed
 python tests\test_procwatch.py       # process behavior and file location/signature checks, synthetic data, no Ollama
 python tests\test_netwatch.py        # network findings and connection recording, no Ollama needed
+python tests\test_scan_guard.py      # path check on the model-facing folder scan, no Ollama needed
 python tests\test_alerts.py          # alert checks, cooldown and notification log, no Ollama needed
 python tests\test_collect_loop.py   # collector survives bad samples
 ```

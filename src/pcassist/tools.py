@@ -2,6 +2,8 @@
 import time
 from pathlib import Path
 
+import psutil
+
 from . import anomaly, binaries, db, netwatch, procwatch, scan
 from .collectors import Collector, collect_disks
 
@@ -199,15 +201,27 @@ def disk_forecast(days: int = 30) -> list[dict]:
     return out
 
 
+MAX_FOLDERS = 25   # rows the model may ask for
+
+
+def fixed_drives() -> set[str]:
+    """Roots of the local fixed drives (C:, D:, ...); CD/DVD, network and removable drives are left out."""
+    return {p.mountpoint for p in psutil.disk_partitions(all=False) if "fixed" in p.opts}
+
+
 def largest_folders(path: str = "C:\\", limit: int = 10) -> dict:
     """Find which subfolders of a directory take the most disk space (read-only scan, up to ~45 s).
     Use it to answer 'what is filling my disk?'. Drill down by calling it again on a big subfolder.
+    Only absolute paths on local drives work (C:\\, C:\\Users); network shares and device paths are refused.
 
     Args:
         path: Directory to scan, e.g. 'C:\\' or 'C:\\Users'.
         limit: How many of the largest subfolders to return.
     """
-    r = scan.largest_children(path, int(limit))
+    real, why = scan.check_model_path(path, fixed_drives())
+    if why:   # the path came from the model: only local fixed drives, no network shares, no device paths
+        return {"error": f"not scanned: {why}"}
+    r = scan.largest_children(real, max(1, min(int(limit), MAX_FOLDERS)))
     if "loose_files_gb" in r:
         # Unambiguous name: the model otherwise reads "loose files" as a headline number.
         r["files_directly_in_this_folder_gb"] = r.pop("loose_files_gb")

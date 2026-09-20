@@ -54,10 +54,30 @@ def is_admin() -> bool:
 
 
 def _ip(value) -> str:
-    """ETW hands out addresses as text or as a number in network byte order; return dotted text either way."""
+    """ETW hands out IPv4 addresses as a number (also as digits in a string, as PowerShell prints it) read from network
+    byte order; IPv6 addresses arrive as text. Return dotted text either way."""
+    if isinstance(value, str) and value.strip().isdigit():
+        value = int(value)
     if isinstance(value, int):
         return socket.inet_ntoa(struct.pack("<I", value & 0xFFFFFFFF))
     return str(value).strip()
+
+
+def _port(value) -> int:
+    """Ports arrive with their two bytes swapped (443 shows up as 47873)."""
+    p = int(value) & 0xFFFF
+    return ((p & 0xFF) << 8) | (p >> 8)
+
+
+def _peer(row: dict) -> tuple[str, int]:
+    """The remote end of a record. The provider names the fields from the connection's point of view, not the packet's
+    (measured: on a receive event the public server is `daddr`), so do not trust the names: the public address is the
+    remote one, and when neither or both are public, daddr is."""
+    d, s = _ip(row["d"]), _ip(row["s"])
+    d_pub, s_pub = _is_remote(d, False), _is_remote(s, False)
+    if s_pub and not d_pub:
+        return s, _port(row["sp"])
+    return d, _port(row["dp"])
 
 
 def _is_remote(addr: str, include_local: bool) -> bool:
@@ -77,7 +97,7 @@ def summarize(rows: list[dict], names: dict[int, str] | None = None, seconds: fl
         send = r["id"] in SEND_IDS
         if not send and r["id"] not in RECV_IDS:
             continue
-        remote, port = (_ip(r["d"]), r["dp"]) if send else (_ip(r["s"]), r["sp"])   # on receive the peer is the source
+        remote, port = _peer(r)
         if not _is_remote(remote, include_local):
             continue
         p = procs.setdefault(r["pid"], {"pid": r["pid"], "sent": 0, "received": 0, "dest": {}})

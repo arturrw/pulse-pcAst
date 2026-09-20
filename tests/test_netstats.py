@@ -11,8 +11,32 @@ from pcassist import db, netstats
 MB = 1024 * 1024
 
 
+def _sw(port: int) -> int:
+    """A port the way the trace delivers it: the two bytes swapped (443 -> 47873)."""
+    return ((port & 0xFF) << 8) | (port >> 8)
+
+
 def _row(i, pid, d, s, dp, sp, size):
-    return {"id": i, "pid": pid, "d": d, "s": s, "dp": dp, "sp": sp, "size": size}
+    """An aggregated trace record; ports are given as people write them and stored the way ETW delivers them."""
+    return {"id": i, "pid": pid, "d": d, "s": s, "dp": _sw(dp), "sp": _sw(sp), "size": size}
+
+
+def test_a_record_from_a_real_trace_is_decoded():
+    # taken from the first measurement on a real machine: numbers as digit strings, swapped ports, the server in `daddr`
+    real = {"id": 11, "pid": 24052, "d": "3952361644", "s": "1997973696", "dp": 47873, "sp": 15863, "size": 24}
+    r = netstats.summarize([real], {24052: "app.exe"}, 30)
+    assert r == [{"pid": 24052, "name": "app.exe", "sent": 0, "received": 24, "sent_per_second": 0.0,
+                  "top_destinations": [{"to": "172.64.148.235:443", "bytes": 24}]}]
+    assert netstats._port(47873) == 443 and netstats._port(15863) == 63293 and netstats._ip("1997973696") == "192.168.22.119"
+
+
+def test_the_remote_end_is_the_public_address_whichever_field_it_is_in():
+    a = _row(11, 1, "8.8.8.8", "192.168.1.5", 443, 50000, 10)         # connection view: the server is daddr (what Windows does)
+    b = _row(11, 1, "192.168.1.5", "8.8.8.8", 50000, 443, 20)         # packet view: the server is the source
+    assert netstats._peer(a) == ("8.8.8.8", 443) and netstats._peer(b) == ("8.8.8.8", 443)
+    lan = _row(10, 1, "192.168.1.9", "192.168.1.5", 445, 50000, 5)     # neither is public: daddr
+    assert netstats._peer(lan) == ("192.168.1.9", 445)
+    assert netstats.summarize([a, b])[0]["received"] == 30
 
 
 def test_addresses_are_read_as_text_or_as_a_network_order_number():

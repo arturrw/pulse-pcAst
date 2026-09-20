@@ -184,10 +184,18 @@ def anomalies_answer(answer, results):
 
 
 def watch_answer(answer, results):
-    """process_watch is behavioral, not a malware scan: the answer must never issue a verdict."""
-    if re.search(r"(?:это|is|are)\s+(?:a\s+)?(?:definitely\s+)?(?:вирус|вредонос|malware|virus|malicious|безопасн|safe)|"
-                 r"(?:no|нет)\s+(?:malware|virus|вирус|вредонос)", answer, re.I):
-        return "verdict on malware/safety given from a behavioral check"
+    """process_watch is behavioral, not a malware scan: the answer must never issue a verdict or reassure."""
+    negation = re.compile(r"(?:cannot|can't|can not|not|never|unable|нельзя|не может|не могу|не способ)[^.]{0,40}$", re.I)
+    verdicts = re.compile(
+        r"(?:это|is|are)\s+(?:a\s+)?(?:definitely\s+)?(?:вирус|вредонос|malware|virus|malicious|безопасн|safe)|"
+        r"(?:no|нет)\s+(?:malware|virus|вирус|вредонос)|"
+        r"не\s+(?:обнаружено|найдено|выявлено|найден|обнаружен)\s+(?:майнер|вирус|вредонос)|"
+        r"no\s+(?:miner|malware|virus)\s+(?:was\s+)?(?:found|detected)|"
+        r"(?:система|компьютер|all|everything|системе)\s+(?:работает\s+)?(?:нормально|в порядке|is fine|is normal|looks fine)|"
+        r"(?:работает|works|is\s+running)\s+(?:нормально|fine|normally)", re.I)
+    for m in verdicts.finditer(answer):
+        if not negation.search(answer[max(0, m.start() - 60):m.start()]):
+            return f"verdict or reassurance from a behavioral check: '{m.group(0)}'"
     r = first(results, "process_watch")
     if r and "error" not in r and r["confidence"] == "low" and not re.search(
             r"low|мало|недостаточно|ненадёж|ненадеж|коротк|weak|слаб|limited|огранич|only|только", answer, re.I):

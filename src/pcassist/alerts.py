@@ -105,6 +105,19 @@ def check_processes(now: float) -> list[Alert]:
             out.append(Alert(f"file-{f['exe']}", "high", f"Suspicious file: {f['name']}",
                              f"{'; '.join(f['reasons'])}. Path: {f['exe']}. Odd is not proof: check it before "
                              "trusting or deleting it (Task Manager > Open file location, a Defender scan)."))
+    net = r.get("network", {})
+    for n in net.get("from_suspicious_files", []):
+        out.append(Alert(f"net-file-{n['name']}", "high", f"{n['name']} (suspicious file) is using the network",
+                         f"It connected to {', '.join(n['destinations'])}{' and more' if n['count'] > 3 else ''}. "
+                         "Its file has a suspicious location or signature (see the report)."))
+    for n in net.get("suspicious_ports", []):
+        out.append(Alert(f"net-port-{n['name']}-{n['port']}", "medium", f"{n['name']} connects to port {n['port']}",
+                         f"Port {n['port']} is typical of {n['typical_of']}: {', '.join(n['destinations'])}. "
+                         "Often harmless, worth a look if you do not know why."))
+    for n in net.get("new_listeners", []):
+        out.append(Alert(f"net-listen-{n['name']}", "medium", f"{n['name']} started listening for connections",
+                         f"It accepts incoming connections on {n['bind']} (ports {', '.join(map(str, n['ports']))}); "
+                         "it never did before."))
     for b in r["busy"]:
         if b["avg_cpu_percent"] >= BUSY_ALERT_CPU:
             usual = ("" if b["usual_cpu_percent_p95"] is None else f" (usually up to {b['usual_cpu_percent_p95']:.0f}%)")

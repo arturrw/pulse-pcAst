@@ -88,18 +88,31 @@ Signatures are checked with Windows' own `Get-AuthenticodeSignature`, once per f
 again only if the file changes); nothing is uploaded anywhere. This part does not depend on how long the history is.
 An unsigned program in Program Files is normal and is not flagged; an unsigned file in Downloads is "high".
 
+**By the network** (`netwatch.py`): the collector also records who talks to whom: outbound TCP connections to public
+addresses and TCP ports listening beyond localhost, as (process, address, port) with first and last time seen. No
+traffic volume (Windows does not give it per process) and no content. The tool reports a suspicious file that connects
+out at all (high), a connection to a port typical of mining pools, Tor or IRC botnets, a program that started
+listening for incoming connections when it never did before, and a program with a small stable set of destinations
+that suddenly talks to a new one. The last two are only judged after 24 h of network history and skip browser-like
+processes with dozens of destinations, otherwise the first day would be all noise.
+
+**Privacy:** the connection table is a list of the public addresses your PC talked to. It stays in the local database
+(`data/`, git-ignored, pruned with the rest of the history after 90 days), is not shown in full anywhere (the chat and
+the report only list flagged connections) and nothing is looked up or sent (no reverse DNS, no reputation service).
+
 It is **not** an antivirus and never says a process is malicious or safe. The collector records only the heaviest
-processes (~26 per sample) and cannot read the file path of protected Windows processes, so a quiet process (a
-stealer that just sits and sends data) is invisible to it, and there is no parent process or per-process network
-information. Anything odd still needs a human check: Task Manager -> Open file location, and a Windows Defender scan.
-Thresholds are in `src/pcassist/procwatch.py` and `src/pcassist/binaries.py`.
+processes (~26 per sample) and cannot read the file path of protected Windows processes, so a quiet process that
+never opens a connection is invisible to it, and there is no parent process or amount of data sent. Anything odd
+still needs a human check: Task Manager -> Open file location, and a Windows Defender scan. Thresholds are in
+`src/pcassist/procwatch.py`, `src/pcassist/binaries.py` and `src/pcassist/netwatch.py`.
 
 ## Alerts
 `pcassist alerts` checks the history once and shows a Windows notification (also written to `data/alerts.log` and
 listed in the report) for things worth interrupting you for: the collector stopped recording, a GPU at 85 C or more
 for 5 minutes, a disk with under 15 GB (or 5%) free or a 14-day fill-up forecast, an unusual stretch of temperature /
 RAM / swap that is not explained by a game, and the serious findings of `process_watch` (a disguised or tampered
-file, a process using 40% of the CPU, memory growing 1 GB/h). The same alert is not repeated for 6 h (serious) or
+file, a suspicious file using the network, a connection to a mining-pool / Tor / IRC port, a program that started
+listening for incoming connections, a process using 40% of the CPU, memory growing 1 GB/h). The same alert is not repeated for 6 h (serious) or
 24 h (the rest). A name that is merely new is not alerted: that evidence is too weak.
 ```powershell
 pcassist alerts --test                                     # show a test notification
@@ -241,6 +254,7 @@ python tests\test_game_tools.py      # unit tests for the game_* chat tools
 python tests\test_anomaly.py         # detector and the unusual-period check, no Ollama needed
 python tests\test_report.py          # HTML report (sections, escaping, gaps), no Ollama needed
 python tests\test_procwatch.py       # process behavior and file location/signature checks, synthetic data, no Ollama
+python tests\test_netwatch.py        # network findings and connection recording, no Ollama needed
 python tests\test_alerts.py          # alert checks, cooldown and notification log, no Ollama needed
 python tests\test_collect_loop.py   # collector survives bad samples
 ```

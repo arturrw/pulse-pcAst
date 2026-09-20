@@ -2,7 +2,7 @@
 import time
 from pathlib import Path
 
-from . import anomaly, binaries, db, procwatch, scan
+from . import anomaly, binaries, db, netwatch, procwatch, scan
 from .collectors import Collector, collect_disks
 
 _db_path = db.DEFAULT_DB
@@ -402,7 +402,8 @@ def process_watch(minutes: int = 1440) -> dict:
     limits. `confidence` is low while there is under 24 h of recorded history: then "never recorded" is weak evidence.
 
     Args:
-        minutes: How many minutes of recent history to examine (older history is the baseline).
+        minutes: How many minutes of recent history to examine (older history is the baseline). The default is one
+            day (1440); use 60 only when the user asks about the last hour.
     """
     now = time.time()
     since = now - int(minutes) * 60
@@ -415,6 +416,7 @@ def process_watch(minutes: int = 1440) -> dict:
         except Exception:
             pass
         files = binaries.assess(conn, since)
+        net = netwatch.analyze(conn, since, now, {f["name"] for f in files["flagged"]})
     if not n:
         return {"error": "no collected process data in this window; run `pcassist collect`"}
     for row in r["new"]:
@@ -427,7 +429,10 @@ def process_watch(minutes: int = 1440) -> dict:
     r["file_checks"] = {"names_with_known_file": files["files_with_path"], "names_recorded": files["names_recorded"],
                         "unsigned_files": files["unsigned_files"],
                         "note": "the file path of protected Windows processes cannot be read, so they are not covered"}
+    r["network"] = net
+    n_net = sum(len(net.get(k, [])) for k in ("from_suspicious_files", "suspicious_ports", "new_listeners", "new_destinations"))
     counts = (f"{len(files['flagged'])} file(s) with a suspicious location or signature ({high} high), "
+              f"{n_net} network finding(s){'' if net.get('available') else ' (no network data yet)'}, "
               f"{r['new_total']} never-recorded name(s), {len(r['busy'])} busier than usual, "
               f"{len(r['growing'])} with growing memory")
     caveat = (f"LOW confidence for the history-based flags: only {r['baseline_hours']:.1f} h of earlier history, so new "

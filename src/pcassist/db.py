@@ -48,6 +48,18 @@ CREATE TABLE IF NOT EXISTS process_exes (
     PRIMARY KEY (name, exe)
 );
 
+-- outbound TCP to public addresses ("out": addr = remote address, port = remote port) and TCP listening on something
+-- other than localhost ("listen": addr = bind address, port = local port); a few rows, not one per sample
+CREATE TABLE IF NOT EXISTS process_connections (
+    name TEXT,
+    kind TEXT,
+    addr TEXT,
+    port INTEGER,
+    first_seen REAL,
+    last_seen REAL,
+    PRIMARY KEY (name, kind, addr, port)
+);
+
 CREATE TABLE IF NOT EXISTS binaries (
     exe TEXT PRIMARY KEY,
     mtime REAL,
@@ -93,6 +105,7 @@ def prune(conn: sqlite3.Connection, keep_days: float, now: float | None = None) 
     for table in TABLES:
         removed += conn.execute(f"DELETE FROM {table} WHERE ts < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM process_exes WHERE last_seen < ?", (cutoff,)).rowcount
+    removed += conn.execute("DELETE FROM process_connections WHERE last_seen < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM binaries WHERE checked_ts < ?", (cutoff,)).rowcount
     conn.commit()
     return removed
@@ -107,4 +120,8 @@ def save_sample(conn: sqlite3.Connection, sample: dict) -> None:
         conn.execute("INSERT INTO process_exes (name, exe, first_seen, last_seen) VALUES (?, ?, ?, ?) "
                      "ON CONFLICT(name, exe) DO UPDATE SET last_seen = excluded.last_seen",
                      (e["name"], e["exe"], e["ts"], e["ts"]))
+    for c in sample.get("conns", []):
+        conn.execute("INSERT INTO process_connections (name, kind, addr, port, first_seen, last_seen) "
+                     "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(name, kind, addr, port) DO UPDATE SET last_seen = excluded.last_seen",
+                     (c["name"], c["kind"], c["addr"], c["port"], c["ts"], c["ts"]))
     conn.commit()

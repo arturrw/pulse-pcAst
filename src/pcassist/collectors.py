@@ -1,4 +1,5 @@
 """Read-only collectors for system, GPU, process and disk metrics."""
+import ipaddress
 import time
 
 import psutil
@@ -115,6 +116,39 @@ class Collector:
             self._exe_cache.clear()
         return list(out.values())
 
+    def _connections(self, ts: float) -> list[dict]:
+        """Outbound TCP to public addresses and TCP listening beyond localhost, as (process name, address, port).
+        Only who talks to whom: psutil cannot say how much, and nothing of the traffic itself is read."""
+        try:
+            conns = psutil.net_connections(kind="tcp")
+        except (psutil.Error, OSError):
+            return []
+        names: dict[int, str] = {}
+        out: dict[tuple, dict] = {}
+        for c in conns:
+            if not c.pid:
+                continue
+            if c.status in ("ESTABLISHED", "SYN_SENT") and c.raddr:
+                kind, addr, port = "out", c.raddr.ip, c.raddr.port
+                try:
+                    if not ipaddress.ip_address(addr).is_global:
+                        continue
+                except ValueError:
+                    continue
+            elif c.status == "LISTEN" and c.laddr and c.laddr.ip not in ("127.0.0.1", "::1"):
+                kind, addr, port = "listen", c.laddr.ip, c.laddr.port
+            else:
+                continue
+            if c.pid not in names:
+                try:
+                    names[c.pid] = psutil.Process(c.pid).name()
+                except psutil.Error:
+                    names[c.pid] = ""
+            if names[c.pid]:
+                out[(names[c.pid], kind, addr, port)] = {"ts": ts, "name": names[c.pid], "kind": kind, "addr": addr,
+                                                          "port": port}
+        return list(out.values())
+
     def sample(self) -> dict:
         processes = self._processes(ts := time.time())
         now = time.time()
@@ -141,5 +175,6 @@ class Collector:
             "gpus": collect_gpus(ts),
             "processes": processes,
             "exes": self.last_exes,
+            "conns": self._connections(ts),
             "disks": collect_disks(ts),
         }

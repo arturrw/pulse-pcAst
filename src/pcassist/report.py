@@ -144,6 +144,15 @@ def watch(hours: float) -> str:
     rows = [[f"<span class='warn'>{escape(x['name'])}</span>", escape("; ".join(x["reasons"])),
              escape(x["signature"]) + (f" ({escape(x['signer'][:40])})" if x["signer"] else ""), escape(x["exe"])]
             for x in r.get("suspect_files", [])]
+    net = r.get("network", {})
+    rows += [[f"<span class='warn'>{escape(n['name'])}</span>", "suspicious file is using the network",
+              escape(", ".join(n["destinations"])), ""] for n in net.get("from_suspicious_files", [])]
+    rows += [[escape(n["name"]), f"connects to port {n['port']}", escape("typical of " + n["typical_of"]),
+              escape(", ".join(n["destinations"]))] for n in net.get("suspicious_ports", [])]
+    rows += [[escape(n["name"]), "started listening for connections", escape(f"ports {', '.join(map(str, n['ports']))}"),
+              escape(n["bind"])] for n in net.get("new_listeners", [])]
+    rows += [[escape(n["name"]), "talks to a new destination", f"{n['new']} new (usually {n['usual_destinations']})",
+              escape(", ".join(n["examples"]))] for n in net.get("new_destinations", [])]
     rows += [[escape(x["name"]), "never recorded before", f"first seen {escape(x['first_seen'])}",
              f"CPU avg {_num(x['avg_cpu_percent'])}%, max mem {_num(x['max_rss_mb'], 0)} MB"] for x in r["new"]]
     rows += [[escape(x["name"]), "far more CPU than usual" if x["usual_cpu_percent_p95"] is not None else "heavy, no history",

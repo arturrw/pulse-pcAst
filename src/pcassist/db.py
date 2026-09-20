@@ -39,6 +39,24 @@ CREATE TABLE IF NOT EXISTS process_snapshots (
     PRIMARY KEY (ts, pid)
 );
 
+-- which file each process name ran from (a few rows, not one per sample), and the cached signature check of it
+CREATE TABLE IF NOT EXISTS process_exes (
+    name TEXT,
+    exe TEXT,
+    first_seen REAL,
+    last_seen REAL,
+    PRIMARY KEY (name, exe)
+);
+
+CREATE TABLE IF NOT EXISTS binaries (
+    exe TEXT PRIMARY KEY,
+    mtime REAL,
+    size INTEGER,
+    sig_status TEXT,
+    signer TEXT,
+    checked_ts REAL
+);
+
 CREATE TABLE IF NOT EXISTS disk_usage (
     ts REAL,
     mount TEXT,
@@ -74,6 +92,8 @@ def prune(conn: sqlite3.Connection, keep_days: float, now: float | None = None) 
     removed = 0
     for table in TABLES:
         removed += conn.execute(f"DELETE FROM {table} WHERE ts < ?", (cutoff,)).rowcount
+    removed += conn.execute("DELETE FROM process_exes WHERE last_seen < ?", (cutoff,)).rowcount
+    removed += conn.execute("DELETE FROM binaries WHERE checked_ts < ?", (cutoff,)).rowcount
     conn.commit()
     return removed
 
@@ -83,4 +103,8 @@ def save_sample(conn: sqlite3.Connection, sample: dict) -> None:
     _insert(conn, "gpu_metrics", sample["gpus"])
     _insert(conn, "process_snapshots", sample["processes"])
     _insert(conn, "disk_usage", sample["disks"])
+    for e in sample.get("exes", []):   # first_seen stays, last_seen moves on
+        conn.execute("INSERT INTO process_exes (name, exe, first_seen, last_seen) VALUES (?, ?, ?, ?) "
+                     "ON CONFLICT(name, exe) DO UPDATE SET last_seen = excluded.last_seen",
+                     (e["name"], e["exe"], e["ts"], e["ts"]))
     conn.commit()

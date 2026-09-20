@@ -25,6 +25,12 @@ def gap_limit(timestamps: list[float]) -> float:
     return max(MIN_GAP_S, 5 * steps[len(steps) // 2]) if steps else MIN_GAP_S
 
 
+def recorded_seconds(timestamps: list[float]) -> float:
+    """Time actually covered by samples: gaps (see gap_limit) are not counted, unlike last - first."""
+    limit = gap_limit(timestamps)
+    return sum(x for x in (b - a for a, b in zip(timestamps, timestamps[1:])) if x <= limit)
+
+
 def scores(values: list[float], window: int = 288, timestamps: list[float] | None = None) -> list[float]:
     """Robust z-score of every value against the previous `window` values (0 until there are enough of them).
     The scale never drops below 0.1% of the median (or 1e-6), so a flat series does not explode on a tiny wiggle.

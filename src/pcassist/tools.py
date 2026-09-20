@@ -2,7 +2,7 @@
 import time
 from pathlib import Path
 
-from . import anomaly, db, scan
+from . import anomaly, binaries, db, procwatch, scan
 from .collectors import Collector, collect_disks
 
 _db_path = db.DEFAULT_DB
@@ -30,9 +30,7 @@ def set_db(path) -> None:
 
 
 def _recorded_seconds(timestamps: list[float]) -> float:
-    """Time actually covered by samples: long gaps (PC off/asleep) are not counted, unlike last - first."""
-    limit = anomaly.gap_limit(timestamps)
-    return sum(x for x in (b - a for a, b in zip(timestamps, timestamps[1:])) if x <= limit)
+    return anomaly.recorded_seconds(timestamps)
 
 
 def _round(d: dict) -> dict:
@@ -395,6 +393,54 @@ def anomalies(metric: str, minutes: int = 1440) -> dict:
     return _round(out)
 
 
+def process_watch(minutes: int = 1440) -> dict:
+    """Look for processes that behave unusually against their own history: a name never recorded before, a process
+    using far more CPU than it usually does (or a lot of CPU with nothing to compare to), or one whose memory keeps
+    growing. This is a behavioral check, NOT an antivirus: only names, CPU and memory of the heaviest processes are
+    recorded (no file path, signature or network use), so it cannot say whether anything is malicious and a quiet
+    process is invisible. Never call a process malware or safe from this; report what stands out and its
+    limits. `confidence` is low while there is under 24 h of recorded history: then "never recorded" is weak evidence.
+
+    Args:
+        minutes: How many minutes of recent history to examine (older history is the baseline).
+    """
+    now = time.time()
+    since = now - int(minutes) * 60
+    with db.connect(_db_path) as conn:
+        r = procwatch.analyze(conn, now - int(minutes) * 60, now)
+        n = conn.execute("SELECT COUNT(*) FROM process_snapshots WHERE ts >= ?", (since,)).fetchone()[0]
+        exes = [e for (e,) in conn.execute("SELECT DISTINCT exe FROM process_exes WHERE last_seen >= ?", (since,))]
+        try:   # the signature check runs Windows PowerShell once per new file; a failure must not break the tool
+            binaries.ensure_checked(conn, exes, checker=binaries.check_signatures)
+        except Exception:
+            pass
+        files = binaries.assess(conn, since)
+    if not n:
+        return {"error": "no collected process data in this window; run `pcassist collect`"}
+    for row in r["new"]:
+        row["first_seen"] = time.strftime("%Y-%m-%d %H:%M", time.localtime(row.pop("first_seen_ts")))
+    spans = [(span, name) for name, p in _recordings().items() if (span := _recording_span(p))]
+    r["game_recordings_in_window"] = sorted(name for (g0, g1), name in spans if g1 >= now - int(minutes) * 60)
+    r["minutes"] = int(minutes)
+    high = sum(f["severity"] == "high" for f in files["flagged"])
+    r["suspect_files"] = files["flagged"][:8]
+    r["file_checks"] = {"names_with_known_file": files["files_with_path"], "names_recorded": files["names_recorded"],
+                        "unsigned_files": files["unsigned_files"],
+                        "note": "the file path of protected Windows processes cannot be read, so they are not covered"}
+    counts = (f"{len(files['flagged'])} file(s) with a suspicious location or signature ({high} high), "
+              f"{r['new_total']} never-recorded name(s), {len(r['busy'])} busier than usual, "
+              f"{len(r['growing'])} with growing memory")
+    caveat = (f"LOW confidence for the history-based flags: only {r['baseline_hours']:.1f} h of earlier history, so new "
+              "names are weak evidence (file location and signature checks do not depend on history length). "
+              if r["confidence"] == "low" else "")
+    r = {"summary": f"{counts}. {caveat}This is a behavioral check, not a malware scan: it cannot say a process is "
+                    "safe or malicious, and quiet processes are invisible.", **r}
+    if r["confidence"] == "low":
+        r["warning"] = (f"only {r['baseline_hours']:.1f} h of earlier history to compare with (need "
+                        f"{procwatch.MIN_BASELINE_HOURS}+ h): 'new' names are weak evidence; tell the user")
+    return _round_deep(r)
+
+
 def _round_deep(x):
     if isinstance(x, dict):
         return {k: _round_deep(v) for k, v in x.items()}
@@ -404,5 +450,5 @@ def _round_deep(x):
 
 
 TOOLS = [current_status, disk_usage, top_processes, metrics_history, disk_forecast, largest_folders,
-         game_sessions, game_session_report, game_sessions_compare]
+         game_sessions, game_session_report, game_sessions_compare, process_watch]
 TOOL_MAP = {f.__name__: f for f in TOOLS}

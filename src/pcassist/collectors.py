@@ -62,6 +62,8 @@ class Collector:
         self._prev_disk = psutil.disk_io_counters()
         self._prev_net = psutil.net_io_counters()
         psutil.cpu_percent(None)
+        self._exe_cache: dict[tuple, str] = {}
+        self.last_exes: list[dict] = []
 
     def _processes(self, ts: float, window: float = 1.0) -> list[dict]:
         procs = [p for p in psutil.process_iter(["pid", "name"]) if p.pid != 0]  # 0 = System Idle
@@ -73,6 +75,7 @@ class Collector:
         time.sleep(window)
         n_cpu = psutil.cpu_count() or 1
         rows = []
+        by_pid = {p.pid: p for p in procs}
         for p in procs:
             try:
                 rows.append(
@@ -90,7 +93,27 @@ class Collector:
         top_ids = {r["pid"] for r in top}
         top += [r for r in sorted(rows, key=lambda r: r["rss_mb"], reverse=True)[:TOP_PROCESSES]
                 if r["pid"] not in top_ids]
+        self.last_exes = self._exes(top, by_pid, ts)
         return top
+
+    def _exes(self, rows: list[dict], by_pid: dict, ts: float) -> list[dict]:
+        """(name, file path) of the recorded processes. The path of a running process never changes, so it is
+        looked up once per process (pid + start time); protected system processes refuse it and are skipped."""
+        out = {}
+        for r in rows:
+            p = by_pid.get(r["pid"])
+            try:
+                key = (r["pid"], p.create_time())
+                if key not in self._exe_cache:
+                    self._exe_cache[key] = p.exe()
+                exe = self._exe_cache[key]
+            except (psutil.Error, AttributeError, OSError):
+                continue
+            if exe:
+                out[(r["name"], exe)] = {"ts": ts, "name": r["name"], "exe": exe}
+        if len(self._exe_cache) > 5000:   # pids come and go; keep the cache from growing for weeks
+            self._exe_cache.clear()
+        return list(out.values())
 
     def sample(self) -> dict:
         processes = self._processes(ts := time.time())
@@ -117,5 +140,6 @@ class Collector:
             "system": system,
             "gpus": collect_gpus(ts),
             "processes": processes,
+            "exes": self.last_exes,
             "disks": collect_disks(ts),
         }

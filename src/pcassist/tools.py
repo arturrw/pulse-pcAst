@@ -2,7 +2,7 @@
 import time
 from pathlib import Path
 
-from . import db, scan
+from . import anomaly, db, scan
 from .collectors import Collector, collect_disks
 
 _db_path = db.DEFAULT_DB
@@ -29,17 +29,10 @@ def set_db(path) -> None:
     _db_path = path
 
 
-MIN_GAP_S = 600  # a silence longer than this (and than 5x the usual sample step) means the collector was not running
-
-
 def _recorded_seconds(timestamps: list[float]) -> float:
-    """Time actually covered by samples: long gaps (PC off/asleep) are not counted, unlike last - first.
-    A gap is anything over 5x the median step, so a collector run with a long --interval still counts."""
-    steps = [b - a for a, b in zip(timestamps, timestamps[1:])]
-    if not steps:
-        return 0.0
-    limit = max(MIN_GAP_S, 5 * sorted(steps)[len(steps) // 2])
-    return sum(x for x in steps if x <= limit)
+    """Time actually covered by samples: long gaps (PC off/asleep) are not counted, unlike last - first."""
+    limit = anomaly.gap_limit(timestamps)
+    return sum(x for x in (b - a for a, b in zip(timestamps, timestamps[1:])) if x <= limit)
 
 
 def _round(d: dict) -> dict:

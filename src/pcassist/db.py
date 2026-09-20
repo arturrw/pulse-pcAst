@@ -2,7 +2,9 @@ import sqlite3
 import time
 from pathlib import Path
 
-DEFAULT_DB = Path(__file__).resolve().parents[2] / "data" / "metrics.db"
+from . import paths
+
+DEFAULT_DB = paths.data_dir() / "metrics.db"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS system_metrics (

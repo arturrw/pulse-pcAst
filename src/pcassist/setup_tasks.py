@@ -5,14 +5,17 @@ Only three fixed job names and two fixed actions are accepted, and only our own 
 web page) sends is ever put into a command line."""
 import json
 import subprocess
+import sys
 from pathlib import Path
+
+from . import paths
 
 TASKS = ("collect", "alerts", "digest")
 ACTIONS = ("install", "remove")
 DESCRIPTIONS = {"collect": "records metrics, processes and connections every 30 s",
                 "alerts": "checks for problems every 15 min and shows a notification",
                 "digest": "one summary notification every morning at 09:00"}
-SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "autostart.ps1"
+SCRIPT = paths.resource("scripts", "autostart.ps1")
 
 
 def _run(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
@@ -43,8 +46,10 @@ def change_task(task: str, action: str, runner=_run) -> tuple[bool, str]:
     if not SCRIPT.exists():
         return False, "scripts/autostart.ps1 was not found (this needs a source checkout of the project)"
     try:
-        code, out = runner(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File", str(SCRIPT),
-                            action, "-Task", task], 120)
+        cmd = ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File", str(SCRIPT), action, "-Task", task]
+        if paths.frozen():                       # the jobs run the installed program, not a python from a checkout
+            cmd += ["-Exe", str(Path(sys.executable).with_name("pcassistw.exe"))]
+        code, out = runner(cmd, 120)
     except (OSError, subprocess.SubprocessError) as e:
         return False, f"could not run PowerShell: {e}"
     return code == 0, out.strip()[-400:]

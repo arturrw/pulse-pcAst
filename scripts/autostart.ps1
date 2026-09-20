@@ -5,7 +5,8 @@
 #   powershell -File scripts\autostart.ps1 install -Task alerts   # notifications, checked every 15 min
 #   powershell -File scripts\autostart.ps1 install -Task digest   # one summary notification every morning at 09:00
 param([Parameter(Mandatory)][ValidateSet('install', 'remove', 'status')][string]$Action,
-      [ValidateSet('collect', 'alerts', 'digest')][string]$Task = 'collect')
+      [ValidateSet('collect', 'alerts', 'digest')][string]$Task = 'collect',
+      [string]$Exe = '')   # the installed app's windowless exe; without it the checkout's .venv python is used
 
 $TaskName = "pcassist-$Task"
 $Root = Split-Path -Parent $PSScriptRoot
@@ -13,10 +14,16 @@ $Pythonw = Join-Path $Root '.venv\Scripts\pythonw.exe'   # pythonw = no console 
 
 switch ($Action) {
     'install' {
-        if (-not (Test-Path $Pythonw)) { throw "Not found: $Pythonw (create .venv and run: pip install -e .)" }
+        if ($Exe) {
+            if (-not (Test-Path $Exe)) { throw "Not found: $Exe" }
+            $Pythonw = $Exe; $Pfx = ''; $Root = Split-Path -Parent $Exe
+        } else {
+            $Pfx = '-m pcassist '
+            if (-not (Test-Path $Pythonw)) { throw "Not found: $Pythonw (create .venv and run: pip install -e .)" }
+        }
         if ($Task -eq 'digest') {
             # Once a day at 09:00; StartWhenAvailable runs it when the PC is switched on later, so a late start still gets one.
-            $act = New-ScheduledTaskAction -Execute $Pythonw -Argument '-m pcassist digest' -WorkingDirectory $Root
+            $act = New-ScheduledTaskAction -Execute $Pythonw -Argument "${Pfx}digest" -WorkingDirectory $Root
             $trg = New-ScheduledTaskTrigger -Daily -At 9:00AM
             $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
                 -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -StartWhenAvailable
@@ -27,7 +34,7 @@ switch ($Action) {
         }
         if ($Task -eq 'alerts') {
             # One short check every 15 minutes; a check that is still running (a slow PowerShell call) is not doubled.
-            $act = New-ScheduledTaskAction -Execute $Pythonw -Argument '-m pcassist alerts' -WorkingDirectory $Root
+            $act = New-ScheduledTaskAction -Execute $Pythonw -Argument "${Pfx}alerts" -WorkingDirectory $Root
             $trg = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 15) `
                 -RepetitionDuration (New-TimeSpan -Days 3650)
             $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
@@ -37,7 +44,7 @@ switch ($Action) {
             Write-Host "Installed '$TaskName' (runs every 15 minutes)."
             return
         }
-        $act = New-ScheduledTaskAction -Execute $Pythonw -Argument '-m pcassist collect --interval 30' -WorkingDirectory $Root
+        $act = New-ScheduledTaskAction -Execute $Pythonw -Argument "${Pfx}collect --interval 30" -WorkingDirectory $Root
         # Trigger 1 starts it at logon. Trigger 2 is a watchdog firing every 5 min from now on: while the
         # collector runs, IgnoreNew makes it a no-op; if the process died (crash, killed) it comes back.
         # (Task Scheduler's "restart on failure" does not cover a killed process, and a repetition attached

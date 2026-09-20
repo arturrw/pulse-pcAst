@@ -1,7 +1,9 @@
+# everything under data/ is local: metrics DB, game recordings, Steam settings backups
+# local Claude Code settings
+*.egg-info/
+.claude/
 .venv/
 __pycache__/
-*.egg-info/
-# everything under data/ is local: metrics DB, game recordings, Steam settings backups
+build/
 data/
-# local Claude Code settings
-.claude/
+dist/

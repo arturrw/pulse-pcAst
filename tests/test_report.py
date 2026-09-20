@@ -28,7 +28,7 @@ def _db(samples: int = 400, jump: float | None = 80.0, proc: str = "chrome.exe")
 def test_report_has_all_sections_and_no_external_resources():
     _db()
     html = report.build_report(2)
-    for part in ("<h1>PC report</h1>", "Summary", "Unusual periods", "GPU temperature", "Disks", "Heaviest processes"):
+    for part in ("<h1>PC report</h1>", "Summary", "Unusual periods", "Process watch", "GPU temperature", "Disks", "Heaviest processes"):
         assert part in html, part
     assert html.count("<svg") == 4 and "<script" not in html.lower()
     assert not re.search(r"(?:src|href)=['\"]?https?://", html)

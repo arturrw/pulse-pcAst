@@ -5,7 +5,7 @@ chat always agree. Names that come from the machine (process names) are HTML-esc
 import time
 from html import escape
 
-from . import anomaly, db, tools
+from . import alerts, anomaly, db, tools
 
 CHARTS = [("gpu_temp_c", "GPU temperature", "°C"), ("cpu_percent", "CPU load", "%"),
           ("ram_percent", "RAM used", "%"), ("gpu_util_percent", "GPU load", "%")]
@@ -137,6 +137,37 @@ def unusual(hours: float) -> str:
     return "<h2>Unusual periods</h2>" + _table(["metric", "when", "lasted", "typical → most unusual"], lines) + ok + note
 
 
+def watch(hours: float) -> str:
+    r = tools.process_watch(int(hours * 60))
+    if "error" in r:
+        return ""
+    rows = [[f"<span class='warn'>{escape(x['name'])}</span>", escape("; ".join(x["reasons"])),
+             escape(x["signature"]) + (f" ({escape(x['signer'][:40])})" if x["signer"] else ""), escape(x["exe"])]
+            for x in r.get("suspect_files", [])]
+    rows += [[escape(x["name"]), "never recorded before", f"first seen {escape(x['first_seen'])}",
+             f"CPU avg {_num(x['avg_cpu_percent'])}%, max mem {_num(x['max_rss_mb'], 0)} MB"] for x in r["new"]]
+    rows += [[escape(x["name"]), "far more CPU than usual" if x["usual_cpu_percent_p95"] is not None else "heavy, no history",
+              f"avg {_num(x['avg_cpu_percent'])}%", "usually up to " + _num(x["usual_cpu_percent_p95"]) + "%"
+              if x["usual_cpu_percent_p95"] is not None else ""] for x in r["busy"]]
+    rows += [[escape(x["name"]), "memory keeps growing", f"{_num(x['from_mb'], 0)} → {_num(x['to_mb'], 0)} MB",
+              f"{_num(x['mb_per_hour'], 0)} MB/h over {_num(x['hours'])} h"] for x in r["growing"]]
+    weak = (f"<p class='warn'>Only {_num(r['baseline_hours'])} h of earlier history to compare with: a name that is "
+            "new here may simply not have been recorded yet.</p>") if r["confidence"] == "low" else ""
+    body = (_table(["process", "what stands out", "", ""], rows) if rows
+            else "<p class='ok'>No process stood out against its own history.</p>")
+    minor = f" ({r['new_minor_count']} short-lived new names ignored.)" if r["new_minor_count"] else ""
+    return ("<h2>Process watch</h2>" + body + weak
+            + f"<p class='mute'>{escape(r['how_it_works'][0].upper() + r['how_it_works'][1:])}. "
+              f"Not a malware scan: check anything odd yourself (Task Manager → Open file location, a Defender scan).{escape(minor)}</p>")
+
+
+def alerts_section() -> str:
+    lines = alerts.recent_log(tools._db_path)
+    if not lines:
+        return ""
+    return ("<h2>Recent alerts</h2><table>" + "".join(f"<tr><td>{escape(x)}</td></tr>" for x in lines) + "</table>")
+
+
 def disks() -> str:
     rows = []
     for r in tools.disk_forecast(30):
@@ -190,7 +221,7 @@ def build_report(hours: float = 24, now: float | None = None) -> str:
         cov = (f"<p class='warn'>The collector recorded only {recorded:.1f} h of these {hours:g} h "
                "(the PC was off or asleep in between); gaps are left blank.</p>") if recorded < hours * 0.8 else ""
         charts = "".join(chart(m, t, u, hours, now) for m, t, u in CHARTS)
-        body = "".join(f"<section>{s}</section>" for s in (cov + overview(hours, now), unusual(hours), charts,
+        body = "".join(f"<section>{s}</section>" for s in (cov + overview(hours, now), unusual(hours), alerts_section(), watch(hours), charts,
                                                           disks(), processes(hours), games()) if s)
     return (f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>PC report</title><style>{STYLE}</style></head><body><main><h1>PC report</h1>"

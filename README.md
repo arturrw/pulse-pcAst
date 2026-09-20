@@ -73,6 +73,42 @@ powershell -File scripts\autostart.ps1 remove    # stop and unregister
 Data stays in `data/metrics.db` (roughly 5-10 MB/day, measured from the first samples at the default 30 s interval; history older than 90 days is deleted automatically, change with `collect --keep-days N`, 0 = keep all).
 Manual cleanup and file shrink: `pcassist prune --days 30`.
 
+## Process watch (unusual load)
+`process_watch` (chat tool and a section of the report) looks at the processes in two ways.
+
+**Against their own history** (`procwatch.py`): a name that never appeared before, a process using far more CPU than
+its usual level (or a lot of CPU with nothing to compare to), and a process whose memory keeps growing. That is the
+shape of a cryptominer or a runaway program. While there is under 24 h of history this part is marked low confidence,
+because "never recorded" then mostly means "not seen yet".
+
+**By the file it runs from** (`binaries.py`): the collector records the file path of each process it can read, and the
+tool flags a Windows system name (`svchost.exe`, `lsass.exe`, ...) running from any folder but System32, a program
+running from Downloads / Temp / Public / the Recycle Bin, and files whose digital signature is broken or untrusted.
+Signatures are checked with Windows' own `Get-AuthenticodeSignature`, once per file (cached in the database, checked
+again only if the file changes); nothing is uploaded anywhere. This part does not depend on how long the history is.
+An unsigned program in Program Files is normal and is not flagged; an unsigned file in Downloads is "high".
+
+It is **not** an antivirus and never says a process is malicious or safe. The collector records only the heaviest
+processes (~26 per sample) and cannot read the file path of protected Windows processes, so a quiet process (a
+stealer that just sits and sends data) is invisible to it, and there is no parent process or per-process network
+information. Anything odd still needs a human check: Task Manager -> Open file location, and a Windows Defender scan.
+Thresholds are in `src/pcassist/procwatch.py` and `src/pcassist/binaries.py`.
+
+## Alerts
+`pcassist alerts` checks the history once and shows a Windows notification (also written to `data/alerts.log` and
+listed in the report) for things worth interrupting you for: the collector stopped recording, a GPU at 85 C or more
+for 5 minutes, a disk with under 15 GB (or 5%) free or a 14-day fill-up forecast, an unusual stretch of temperature /
+RAM / swap that is not explained by a game, and the serious findings of `process_watch` (a disguised or tampered
+file, a process using 40% of the CPU, memory growing 1 GB/h). The same alert is not repeated for 6 h (serious) or
+24 h (the rest). A name that is merely new is not alerted: that evidence is too weak.
+```powershell
+pcassist alerts --test                                     # show a test notification
+pcassist alerts --dry-run                                  # print what would be sent, send and remember nothing
+powershell -File scripts\autostart.ps1 install -Task alerts  # check every 15 minutes in the background
+```
+If the test notification does not appear, check that Windows Focus assist / Do not disturb is off; the alerts still
+reach `data/alerts.log` and the report. Thresholds are at the top of `src/pcassist/alerts.py`.
+
 ## Report
 `pcassist report` writes one self-contained HTML file (inline SVG charts, no scripts, no network, light and dark
 theme): a summary (min / average / max), unusual periods, charts of GPU temperature, CPU, RAM and GPU load, disks
@@ -158,6 +194,7 @@ The model answers only by calling these read-only tools:
 | `game_sessions` | recorded game sessions and benchmark runs (PresentMon CSV in `data/sessions`, `data/bench`) |
 | `game_session_report` | FPS, 1% / 0.1% lows, limiter, slowest 10 s stretches and hitches of one recording |
 | `game_sessions_compare` | avg FPS / lows / p99 of two recordings side by side |
+| `process_watch` | processes that stand out against their own history: never recorded before, far more CPU than usual, memory growing (behavioral only, not a malware scan) |
 
 ## Anomaly detection
 `src/pcassist/anomaly.py`: a value counts as unusual when it stays far outside the median of the previous
@@ -203,5 +240,7 @@ python tests\test_prune.py           # unit tests for history cleanup
 python tests\test_game_tools.py      # unit tests for the game_* chat tools
 python tests\test_anomaly.py         # detector and the unusual-period check, no Ollama needed
 python tests\test_report.py          # HTML report (sections, escaping, gaps), no Ollama needed
+python tests\test_procwatch.py       # process behavior and file location/signature checks, synthetic data, no Ollama
+python tests\test_alerts.py          # alert checks, cooldown and notification log, no Ollama needed
 python tests\test_collect_loop.py   # collector survives bad samples
 ```

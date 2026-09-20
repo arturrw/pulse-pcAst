@@ -1,16 +1,30 @@
-# Run the metrics collector in the background at every Windows logon.
+# Run pcassist in the background: the metrics collector (default) or the alert check.
 #   powershell -File scripts\autostart.ps1 install   # register + start now
 #   powershell -File scripts\autostart.ps1 remove    # stop + unregister
 #   powershell -File scripts\autostart.ps1 status
-param([Parameter(Mandatory)][ValidateSet('install', 'remove', 'status')][string]$Action)
+#   powershell -File scripts\autostart.ps1 install -Task alerts   # notifications, checked every 15 min
+param([Parameter(Mandatory)][ValidateSet('install', 'remove', 'status')][string]$Action,
+      [ValidateSet('collect', 'alerts')][string]$Task = 'collect')
 
-$TaskName = 'pcassist-collect'
+$TaskName = "pcassist-$Task"
 $Root = Split-Path -Parent $PSScriptRoot
 $Pythonw = Join-Path $Root '.venv\Scripts\pythonw.exe'   # pythonw = no console window
 
 switch ($Action) {
     'install' {
         if (-not (Test-Path $Pythonw)) { throw "Not found: $Pythonw (create .venv and run: pip install -e .)" }
+        if ($Task -eq 'alerts') {
+            # One short check every 15 minutes; a check that is still running (a slow PowerShell call) is not doubled.
+            $act = New-ScheduledTaskAction -Execute $Pythonw -Argument '-m pcassist alerts' -WorkingDirectory $Root
+            $trg = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 15) `
+                -RepetitionDuration (New-TimeSpan -Days 3650)
+            $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -StartWhenAvailable
+            Register-ScheduledTask -TaskName $TaskName -Action $act -Trigger $trg -Settings $set `
+                -Description 'pcassist alert check (Windows notifications)' -Force | Out-Null
+            Write-Host "Installed '$TaskName' (runs every 15 minutes)."
+            return
+        }
         $act = New-ScheduledTaskAction -Execute $Pythonw -Argument '-m pcassist collect --interval 30' -WorkingDirectory $Root
         # Trigger 1 starts it at logon. Trigger 2 is a watchdog firing every 5 min from now on: while the
         # collector runs, IgnoreNew makes it a no-op; if the process died (crash, killed) it comes back.

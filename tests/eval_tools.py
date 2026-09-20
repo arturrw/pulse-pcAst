@@ -183,6 +183,18 @@ def anomalies_answer(answer, results):
     return None
 
 
+def watch_answer(answer, results):
+    """process_watch is behavioral, not a malware scan: the answer must never issue a verdict."""
+    if re.search(r"(?:это|is|are)\s+(?:a\s+)?(?:definitely\s+)?(?:вирус|вредонос|malware|virus|malicious|безопасн|safe)|"
+                 r"(?:no|нет)\s+(?:malware|virus|вирус|вредонос)", answer, re.I):
+        return "verdict on malware/safety given from a behavioral check"
+    r = first(results, "process_watch")
+    if r and "error" not in r and r["confidence"] == "low" and not re.search(
+            r"low|мало|недостаточно|ненадёж|ненадеж|коротк|weak|слаб|limited|огранич|only|только", answer, re.I):
+        return "low-confidence result presented without a caveat"
+    return None
+
+
 COMMON = [no_markdown, no_double_backslash]
 
 # (question, must call, must NOT call, extra answer checks, db override)
@@ -214,6 +226,10 @@ CASES = [
      [game_compare_answer, answer_in_english], None),
     ("was there anything unusual with the GPU temperature in the last day?", {"metrics_history"}, set(),
      [anomalies_answer, answer_in_english], None),
+    ("есть ли подозрительные процессы, может быть майнер или вирус?", {"process_watch"}, set(),
+     [watch_answer, answer_in_russian], None),
+    ("did any process behave suspiciously in the last day?", {"process_watch"}, set(),
+     [watch_answer, answer_in_english], None),
     ("были ли аномалии в загрузке видеокарты за сутки?", set(), set(), [], None),   # load metric: any sane answer, no crash
 ]
 SLOW_CASES = [

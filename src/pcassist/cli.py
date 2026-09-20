@@ -133,6 +133,20 @@ def cmd_report(args: argparse.Namespace) -> None:
         os.startfile(out.resolve())   # Windows: the default browser
 
 
+def cmd_alerts(args: argparse.Namespace) -> None:
+    from . import alerts
+
+    if args.test:
+        ok = alerts.notify("pcassist test", "If you can read this, alerts can reach you.")
+        print("Notification shown." if ok else "The notification could not be shown (see README, Alerts).")
+        return
+    found = alerts.run_once(args.db, dry_run=args.dry_run)
+    verb = "Would send" if args.dry_run else "Sent"
+    print(f"{verb} {len(found)} alert(s).")
+    for a in found:
+        print(f"  [{a.severity}] {a.title}: {a.body}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pcassist")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -192,6 +206,12 @@ def main(argv: list[str] | None = None) -> int:
     rp.add_argument("--open", action="store_true", help="open the report in the default browser")
     rp.add_argument("--db", default=str(db.DEFAULT_DB))
     rp.set_defaults(func=cmd_report)
+
+    al = sub.add_parser("alerts", help="check the history once and show a Windows notification for what needs attention")
+    al.add_argument("--dry-run", action="store_true", help="only print what would be sent; send and remember nothing")
+    al.add_argument("--test", action="store_true", help="show a test notification and exit")
+    al.add_argument("--db", default=str(db.DEFAULT_DB))
+    al.set_defaults(func=cmd_alerts)
 
     args = parser.parse_args(argv)
     args.func(args)

@@ -125,7 +125,8 @@ def metrics_history(metric: str, minutes: int = 60) -> dict:
     For gpu_temp_c, ram_percent, ram_used_mb and swap_percent the result also lists `unusual_periods`: stretches
     where the value stayed far outside its recent normal (a statistical check, not a fault diagnosis), each marked
     `during_game` when a game recording overlaps. Load metrics (CPU, GPU usage, disk, network) are not checked
-    for unusual periods: they swing with whatever the user runs.
+    for unusual periods: they swing with whatever the user runs. It is about history: for what a value is right
+    now ("what is the temperature now") use current_status instead.
 
     Args:
         metric: One of cpu_percent, ram_percent, ram_used_mb, swap_percent, disk_read_mbps,

@@ -121,6 +121,32 @@ def folders_answer(answer, results):
     return None
 
 
+def game_report_answer(answer, results):
+    r = first(results, "game_session_report")
+    if "error" in r:
+        return None
+    for key in ("avg_fps", "low1_fps"):
+        if not num_in(answer, r[key]):
+            return f"{key}={r[key]} not in answer"
+    return None
+
+
+def game_compare_answer(answer, results):
+    r = first(results, "game_sessions_compare")
+    if "error" in r:
+        return f"compare failed: {r['error']}"
+    for key in ("avg_fps", "low1_fps"):
+        for side in ("before", "after"):
+            if not num_in(answer, r[key][side]):
+                return f"{key} {side}={r[key][side]} not in answer"
+    return None
+
+
+def game_none_answer(answer, results):
+    """No recordings: the answer must not contain invented FPS numbers."""
+    return "FPS numbers in an answer without recordings" if re.search(r"\d+\s*(fps|кадр)", answer, re.I) else None
+
+
 COMMON = [no_markdown, no_double_backslash]
 
 # (question, must call, must NOT call, extra answer checks, db override)
@@ -136,6 +162,11 @@ CASES = [
     ("какие процессы грузили процессор за последние 10 минут?", {"top_processes"}, set(), [], None),
     ("какая сейчас температура видеокарты?", {"current_status"}, {"metrics_history"}, [], None),
     ("как менялась температура GPU за последний час?", {"metrics_history"}, set(), [history_answer], "EMPTY"),
+    ("какие у меня есть записи игровых сессий?", {"game_sessions"}, {"game_session_report"}, [], None),
+    ("покажи FPS в последней игровой записи", {"game_sessions", "game_session_report"}, set(),
+     [game_report_answer], None),
+    ("сравни записи combo_base_1 и combo_fsr3_1", {"game_sessions_compare"}, set(), [game_compare_answer], None),
+    ("покажи FPS в последней игре", {"game_sessions"}, {"game_session_report"}, [game_none_answer], "EMPTY"),
 ]
 SLOW_CASES = [
     ("что занимает место на диске C?", {"largest_folders"}, {"disk_usage"}, [folders_answer], None),

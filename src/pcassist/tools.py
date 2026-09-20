@@ -1,5 +1,6 @@
 """Read-only tools the LLM can call. Docstrings double as the tool descriptions."""
 import time
+from pathlib import Path
 
 from . import db, scan
 from .collectors import Collector, collect_disks
@@ -185,5 +186,109 @@ def largest_folders(path: str = "C:\\", limit: int = 10) -> dict:
     return r
 
 
-TOOLS = [current_status, disk_usage, top_processes, metrics_history, disk_forecast, largest_folders]
+def _recordings() -> dict[str, Path]:
+    """PresentMon recordings (name = file name without .csv) in data/sessions and data/bench, next to the metrics DB."""
+    data = Path(_db_path).parent
+    found = {}
+    for sub in ("sessions", "bench"):
+        for p in (data / sub).glob("*.csv"):
+            found.setdefault(p.stem, p)
+    return found
+
+
+def _find_recording(name: str) -> Path:
+    """Exact name, else the only name containing it; the model must pick from game_sessions, never a raw path."""
+    found = _recordings()
+    key = str(name).strip().removesuffix(".csv").lower()
+    if not key:
+        raise ValueError("empty session name; call game_sessions to see the names")
+    exact = [n for n in found if n.lower() == key]
+    part = exact or [n for n in found if key in n.lower()]
+    if len(part) != 1:
+        hint = f"ambiguous, matches: {sorted(part)[:8]}" if part else "no such recording"
+        raise ValueError(f"{hint}; call game_sessions to see the names")
+    return found[part[0]]
+
+
+def game_sessions(limit: int = 10) -> list[dict]:
+    """List recorded game sessions and benchmark runs (PresentMon), newest first, with the name to pass to
+    game_session_report / game_sessions_compare. Use it first for any question about a game's FPS or lags.
+
+    Args:
+        limit: How many recordings to list.
+    """
+    found = sorted(_recordings().items(), key=lambda kv: kv[1].stat().st_mtime, reverse=True)
+    out = [{"name": n, "recorded": time.strftime("%Y-%m-%d %H:%M", time.localtime(p.stat().st_mtime)),
+            "kind": "benchmark run" if p.parent.name == "bench" else "session"} for n, p in found[:int(limit)]]
+    return out or [{"error": "no recordings in data/sessions or data/bench; record one with scripts/record_presentmon.ps1"}]
+
+
+def _report(name: str) -> dict:
+    from . import games
+
+    return games.analyze(_find_recording(name))   # recordings are already limited to the game's process
+
+
+def game_session_report(name: str) -> dict:
+    """FPS report of one recorded game session: average FPS, 1% / 0.1% lows, frame times, what limits the
+    frame rate (GPU or CPU), the slowest 10-second stretches and the worst hitches. All numbers are computed
+    from the recording. Get the name from game_sessions.
+
+    Args:
+        name: Recording name as listed by game_sessions.
+    """
+    try:
+        r = _report(name)
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+    fs, w = r["frames"], r["window"]
+    slices = r["slices"][:-1] or r["slices"]   # the last slice is usually partial
+    slow = sorted(range(len(slices)), key=lambda i: slices[i])[:3]
+    out = {"name": name, "window_seconds": (w["end"] - w["start"]).total_seconds(),
+           "avg_fps": fs["avg_fps"], "low1_fps": fs["low1_fps"], "low01_fps": fs["low01_fps"],
+           "median_frame_ms": fs["median_ms"], "p99_frame_ms": fs["p99_ms"], "worst_frame_ms": fs["worst_ms"],
+           "frames_over_33ms": fs["slow"][33.3],
+           "slowest_10s_stretches": [{"from_second": i * 10, "avg_fps": slices[i]} for i in sorted(slow)],
+           "hitches_over_30ms": {"seconds_with_hitches": r["hitches"]["seconds"],
+                                 "worst": [{"time": h["t"].strftime("%H:%M:%S"), "frames": h["frames"],
+                                            "worst_ms": h["worst_ms"], "probably_game_exit": h["near_end"]}
+                                           for h in r["hitches"]["worst"][:3]]},
+           "notes": r["notes"]}
+    b = r["bottleneck"]
+    if b:
+        out["limiter_percent_of_frames"] = {k: 100 * b[k] for k in ("gpu", "cpu", "neither")}
+    return _round_deep(out)
+
+
+def game_sessions_compare(before: str, after: str) -> dict:
+    """Compare two recorded sessions or benchmark runs (e.g. before and after a settings change): differences
+    in average FPS, 1% / 0.1% lows and p99 frame time. Only meaningful for the same scene or route; a single
+    run varies from run to run, so tell the user small differences may be noise.
+
+    Args:
+        before: Name of the first recording (from game_sessions).
+        after: Name of the second recording (from game_sessions).
+    """
+    try:
+        a, b = _report(before)["frames"], _report(after)["frames"]
+    except (OSError, ValueError) as e:
+        return {"error": str(e)}
+    keys = {"avg_fps": "avg_fps", "low1_fps": "low1_fps", "low01_fps": "low01_fps", "p99_frame_ms": "p99_ms"}
+    out = {"before": before, "after": after}
+    for label, k in keys.items():
+        out[label] = {"before": a[k], "after": b[k], "change_percent": 100 * (b[k] / a[k] - 1) if a[k] else None}
+    out["note"] = "single runs vary; repeat each setting at least twice before trusting a small difference"
+    return _round_deep(out)
+
+
+def _round_deep(x):
+    if isinstance(x, dict):
+        return {k: _round_deep(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_round_deep(v) for v in x]
+    return round(x, 1) if isinstance(x, float) else x
+
+
+TOOLS = [current_status, disk_usage, top_processes, metrics_history, disk_forecast, largest_folders,
+         game_sessions, game_session_report, game_sessions_compare]
 TOOL_MAP = {f.__name__: f for f in TOOLS}

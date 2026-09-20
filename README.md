@@ -125,6 +125,9 @@ The model answers only by calling these read-only tools:
 | `metrics_history` | min/avg/max/latest, when the max happened and the change over the last 10 min (from history) |
 | `disk_forecast` | growth in GB/day and days until each disk is full (linear trend; flagged unreliable under 24 h of history) |
 | `largest_folders` | what takes the most space in a directory (scan up to ~45 s) |
+| `game_sessions` | recorded game sessions and benchmark runs (PresentMon CSV in `data/sessions`, `data/bench`) |
+| `game_session_report` | FPS, 1% / 0.1% lows, limiter, slowest 10 s stretches and hitches of one recording |
+| `game_sessions_compare` | avg FPS / lows / p99 of two recordings side by side |
 
 ## Tests
 `tests/eval_tools.py` checks that the model picks the right tool for typical questions
@@ -133,5 +136,6 @@ The model answers only by calling these read-only tools:
 python tests\eval_tools.py --runs 2   # add --slow to include the folder scan case
 python tests\test_forecast.py        # unit tests for disk_forecast, no Ollama needed
 python tests\test_prune.py           # unit tests for history cleanup
+python tests\test_game_tools.py      # unit tests for the game_* chat tools
 python tests\test_collect_loop.py   # collector survives bad samples
 ```

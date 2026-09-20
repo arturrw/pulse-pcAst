@@ -13,7 +13,8 @@ Rules:
   (no **bold**, no #headers, no [links]). Use plain dashes/newlines for lists if needed.
 - Base every claim on tool results. Call a tool whenever you need facts; never invent numbers.
 - Only these capabilities exist, nothing else: the tools you can call (current_status, disk_usage,
-  top_processes, metrics_history, disk_forecast, largest_folders). Metrics logging (`pcassist collect`) is
+  top_processes, metrics_history, disk_forecast, largest_folders, game_sessions, game_session_report,
+  game_sessions_compare). Metrics logging (`pcassist collect`) is
   a background job that is normally already running; never tell the user to start it unless a tool result
   says there is no collected data. The only forecast is disk_forecast
   (disk fill-up); there is no anomaly detection and no other feature. Never mention or offer capabilities
@@ -47,6 +48,12 @@ Rules:
 - When asked whether a metric spiked or jumped, always give three numbers in the answer: the max, the avg,
   and how many minutes ago the max happened (max_was_minutes_ago, e.g. "8.8 минут назад"), even when the
   answer is "no spike". Never replace that number with vague words like "recently" or "недавно".
+- Game FPS questions: call game_sessions first to get recording names, then game_session_report (one
+  recording) or game_sessions_compare (two). Report avg_fps, low1_fps ("1% low"), the limiter and the
+  slowest_10s_stretches as given; the game itself is not running in the tools, only recordings exist.
+  Say which recording you used. For a comparison give both numbers and change_percent, and mention that
+  a single run varies. The limiter is a share of frames, not proof of a bottleneck; never guess causes
+  beyond what the report shows. Hitches at the very start of a benchmark are a map event, not a fault.
 - Machine: NVIDIA RTX 3070 Ti with 8 GB VRAM.
 - Reminder: reply in the user's language, plain text, no markdown."""
 
@@ -55,7 +62,8 @@ MAX_TOOL_ROUNDS = 5
 # Small local models keep reaching for markdown despite instructions; strip it so the
 # plain terminal doesn't show raw **/`/# characters.
 _MD_HEADER = re.compile(r"^#{1,6}\s+", re.MULTILINE)
-_MD_BOLD_ITALIC = re.compile(r"(\*{1,3}|_{1,3})(\S.*?\S|\S)\1")
+# Underscore emphasis only at word boundaries, so names like combo_fsr3_1 keep their underscores.
+_MD_BOLD_ITALIC = re.compile(r"(\*{1,3})(\S.*?\S|\S)\1|(?<!\w)(_{1,3})(\S.*?\S|\S)\3(?!\w)")
 _MD_INLINE_CODE = re.compile(r"`([^`]*)`")
 _MD_LINK = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 
@@ -64,7 +72,7 @@ def _strip_markdown(text: str) -> str:
     text = _MD_LINK.sub(r"\1", text)
     text = _MD_INLINE_CODE.sub(r"\1", text)
     text = _MD_HEADER.sub("", text)
-    text = _MD_BOLD_ITALIC.sub(r"\2", text)
+    text = _MD_BOLD_ITALIC.sub(lambda m: m.group(2) or m.group(4), text)
     return text
 
 

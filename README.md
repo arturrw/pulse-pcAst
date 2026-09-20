@@ -1,8 +1,21 @@
 # pc-ai-assistant
 
+[![tests](https://github.com/arturrw/pc-ai-assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/arturrw/pc-ai-assistant/actions/workflows/tests.yml)
+
 Local AI assistant that analyzes the state of your own computer. Everything runs locally
-(psutil + NVML for metrics, SQLite for storage, Ollama for the LLM). Read-only: it never
-changes or deletes anything.
+(psutil + NVML for metrics, SQLite for storage, Ollama for the LLM). It only reads the state of your system: it
+writes nothing but its own files under `data/` and never changes, stops or deletes anything else. Windows only.
+
+- **Ask your PC in plain language** (`pcassist chat`): load, disk space and when a disk will fill up, temperature
+  history, the heaviest processes, FPS of your game recordings. The model can only call read-only tools and every
+  number comes from them.
+- **Notices what is unusual** (`pcassist alerts`): a hot GPU, a nearly full disk, an unusual stretch of RAM or
+  temperature, and processes that stand out (a disguised system file, a broken signature, a program listening or
+  connecting where it never did) as a Windows notification. It is a behavioral check, not an antivirus.
+- **One-page report** (`pcassist report`) and **game benchmarks** (FPS, 1% lows, what limits the frame rate).
+
+![Example report (synthetic demo data)](docs/report.png)
+*Example report built from synthetic demo data (`scripts/seed_fake.py`), not from a real machine.*
 
 ## Status
 - [x] Stage 1: metrics collector -> SQLite
@@ -85,7 +98,8 @@ because "never recorded" then mostly means "not seen yet".
 tool flags a Windows system name (`svchost.exe`, `lsass.exe`, ...) running from any folder but System32, a program
 running from Downloads / Temp / Public / the Recycle Bin, and files whose digital signature is broken or untrusted.
 Signatures are checked with Windows' own `Get-AuthenticodeSignature`, once per file (cached in the database, checked
-again only if the file changes); nothing is uploaded anywhere. This part does not depend on how long the history is.
+again only if the file changes); the tool uploads nothing (Windows itself may contact certificate servers to check
+revocation while verifying a signature). This part does not depend on how long the history is.
 An unsigned program in Program Files is normal and is not flagged; an unsigned file in Downloads is "high".
 
 **By the network** (`netwatch.py`): the collector also records who talks to whom: outbound TCP connections to public
@@ -98,7 +112,7 @@ processes with dozens of destinations, otherwise the first day would be all nois
 
 **Privacy:** the connection table is a list of the public addresses your PC talked to. It stays in the local database
 (`data/`, git-ignored, pruned with the rest of the history after 90 days), is not shown in full anywhere (the chat and
-the report only list flagged connections) and nothing is looked up or sent (no reverse DNS, no reputation service).
+the report only list flagged connections) and this tool looks nothing up and sends nothing (no reverse DNS, no reputation service).
 
 It is **not** an antivirus and never says a process is malicious or safe. The collector records only the heaviest
 processes (~26 per sample) and cannot read the file path of protected Windows processes, so a quiet process that

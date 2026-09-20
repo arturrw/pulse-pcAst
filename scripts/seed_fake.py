@@ -1,4 +1,4 @@
-"""Fill a SEPARATE database with synthetic history, for trying out chat/forecast without waiting.
+r"""Fill a SEPARATE database with synthetic history, for trying out chat/forecast without waiting.
 
     .\.venv\Scripts\python.exe scripts\seed_fake.py [--days 14] [--out data\fake.db]
     .\.venv\Scripts\python.exe -m pcassist chat --db data\fake.db

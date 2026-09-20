@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-from pcassist import anomaly
+from vigil import anomaly
 
 CATEGORIES = ("realAWSCloudwatch", "realKnownCause", "artificialWithAnomaly")   # PC-like metrics + easy synthetic
 

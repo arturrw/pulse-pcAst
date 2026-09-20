@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from pcassist import ack, db, digest, persistence, tools, winhealth
+from vigil import ack, db, digest, persistence, tools, winhealth
 
 # Nothing here may read this machine's event logs, registry or autostart entries.
 winhealth.read_raw = lambda hours: {}

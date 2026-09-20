@@ -16,7 +16,7 @@ from pathlib import Path
 
 import zlib
 
-from . import ack, anomaly, db, persistence, tools
+from . import ack, anomaly, db, persistence, settings, tools
 
 TEMP_ALERT_C = 85.0          # the RTX 3070 Ti starts throttling in the low 80s
 TEMP_SAMPLES = 10            # the last ~5 min must all be this hot, one spike is not an alert
@@ -227,7 +227,14 @@ def run_once(db_path, now: float | None = None, notify_fn=notify, dry_run: bool 
     data = Path(db_path).parent
     state_path, log_path = data / "alerts_state.json", data / "alerts.log"
     state = _load_state(state_path)
+    cfg = settings.load(data)
+    if not dry_run:
+        lt = time.localtime(now)
+        if settings.in_quiet_hours(cfg, lt.tm_hour * 60 + lt.tm_min):
+            return []                     # nothing is shown or remembered: it comes up after the quiet hours
     new = select_new(collect_alerts(now), state, now)
+    if cfg["alerts_min_severity"] == "high":
+        new = [a for a in new if a.severity == "high"]
     if dry_run:
         return new
     lines = []

@@ -3,7 +3,7 @@
 Windows does not give per-process network volume to normal programs (checked: the I/O counters of a process that moves
 30 MB over a socket show 0). The only real source is ETW, the event tracing of the system, and starting a trace needs
 administrator rights. So this is a command you run yourself when you want to know "who is uploading right now":
-    pcassist netstats --seconds 60        (in a terminal opened as administrator)
+    vigil netstats --seconds 60        (in a terminal opened as administrator)
 It starts a short trace of Microsoft-Windows-Kernel-Network with `logman`, stops it, adds the sizes up per process and
 destination, prints the result and DELETES the trace file (it holds the addresses you talked to). Nothing stays running
 with high rights, nothing is changed on the machine besides the temporary trace session, and nothing is sent anywhere.
@@ -20,7 +20,7 @@ import subprocess
 import time
 from pathlib import Path
 
-SESSION = "pcassist-net"
+SESSION = "vigil-net"
 PROVIDER = "Microsoft-Windows-Kernel-Network"
 # Event ids of the provider: data sent / received, TCP and UDP, IPv4 and IPv6.
 SEND_IDS = {10, 26, 42, 58}

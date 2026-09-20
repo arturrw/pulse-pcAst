@@ -3,7 +3,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from pcassist import db, tools
+from vigil import db, tools
 
 
 def _make_db(rows_by_mount: dict[str, list[tuple[float, float]]], total: float = 1000.0) -> Path:

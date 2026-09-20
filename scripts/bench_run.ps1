@@ -121,5 +121,5 @@ if ((Test-Path $csv) -and $stopLine -and $startLine) {
     $times | Set-Content (Join-Path $OutDir "$Name.end.txt")
 }
 if (Test-Path $csv) {
-    & $Python -m pcassist session report $csv --process cs2.exe
+    & $Python -m vigil session report $csv --process cs2.exe
 }

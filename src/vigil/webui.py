@@ -1,4 +1,4 @@
-"""The local web app: `pcassist ui` opens a dashboard in the browser with everything the command line can do.
+"""The local web app: `vigil ui` opens a dashboard in the browser with everything the command line can do.
 
 It is a small server on 127.0.0.1 only. Because a web page can be attacked from other web pages, every request is
 checked: the Host must be the local address (DNS-rebinding), a POST's Origin must be this app, and every call needs a
@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ack, alerts, chat, db, digest, report, setup_tasks, tools
+from . import ack, alerts, chat, db, digest, explain, report, settings, setup_tasks, tools
 from .webui_page import render_page
 
 MAX_BODY = 16 * 1024
@@ -87,6 +87,21 @@ class App:
                 fn()
             except Exception:   # noqa: BLE001
                 pass
+
+    def _mark_accepted(self, fid: str, accepted: bool, note: str = "") -> None:
+        """Reflect an accept / forget in the cached checks right away and refresh them in the background, so the page never
+        waits for the slow Windows checks and never shows the old state."""
+        with self._lock:
+            for key in ("health", "health168", "startup", "startup168"):
+                hit = self._cache.get(key)
+                if not hit:
+                    continue
+                value = hit[1]
+                rows = list(value.get("findings", [])) + list(value.get("new_or_changed", [])) + list(value.get("already_present_but_suspicious", []))
+                for r in rows:
+                    if r.get("id") == fid:
+                        r["accepted"], r["accepted_note"] = accepted, note
+                self._cache[key] = (0.0, value)         # stale: the next read refreshes it in the background
 
     def _forget_cache(self, *keys: str) -> None:
         with self._lock:
@@ -167,19 +182,21 @@ class App:
                              "detail": f"typical of {n['typical_of']}", "accepted": False})
         rank = {"high": 0, "medium": 1, "low": 2}
         out.sort(key=lambda f: (f["accepted"], rank.get(f["severity"], 3), f["title"]))
-        return {"findings": out + info, "summary": {"windows": health.get("summary"), "startup": startup.get("summary")},
+        allf = [{**f, "explain": explain.finding(f)} for f in out + info]
+        return {"findings": allf, "summary": {"windows": health.get("summary"), "startup": startup.get("summary")},
                 "accepted_list": ack.load(self.db_path)}
 
     def acknowledge(self, finding_id, note) -> dict:
         fid = _clean_id(finding_id)
         note = (note or "")[:300] if isinstance(note, str) else ""
         entry = ack.acknowledge(self.db_path, fid, note)
-        self._forget_cache()
+        self._mark_accepted(fid, True, note)
         return {"ok": True, "id": fid, **entry}
 
     def forget(self, finding_id) -> dict:
-        ok = ack.forget(self.db_path, _clean_id(finding_id))
-        self._forget_cache()
+        fid = _clean_id(finding_id)
+        ok = ack.forget(self.db_path, fid)
+        self._mark_accepted(fid, False)
         return {"ok": ok}
 
     # ---- timeline and games
@@ -193,6 +210,9 @@ class App:
         result = tools.what_happened(when, minutes)
         if "error" in result:
             raise ApiError(result["error"])
+        result["timeline"] = [{**e, "explain": explain.event(e["type"], e["text"])} for e in result["timeline"]]
+        result["heaviest_processes"] = [{**p, "explain": explain.process(p["name"])} for p in result["heaviest_processes"]]
+        result["metric_info"] = {k: explain.metric(k) for k in result["metrics"]}
         return result
 
     def games(self) -> dict:
@@ -202,13 +222,13 @@ class App:
         r = tools.game_session_report(_clean_id(name, "name"))
         if "error" in r:
             raise ApiError(r["error"])
-        return r
+        return {"name": r["name"], **explain.game_summary(r)}
 
     def game_compare(self, before, after) -> dict:
         r = tools.game_sessions_compare(_clean_id(before, "name"), _clean_id(after, "name"))
         if "error" in r:
             raise ApiError(r["error"])
-        return r
+        return {"before": r["before"], "after": r["after"], **explain.game_compare_text(r)}
 
     # ---- the assistant
     def _client(self):
@@ -247,18 +267,46 @@ class App:
         jobs = self._cached("jobs", lambda: setup_tasks.tasks_status(*self._runner_args()), 20)
         return {"jobs": [{"name": t, "state": s, "what": setup_tasks.DESCRIPTIONS[t]} for t, s in jobs.items()],
                 "ollama": self._cached("ollama", lambda: setup_tasks.ollama_status(self.model, self._client_factory), 20),
+                "settings": settings.load(self.db_path.parent), "choices": {k: list(v) for k, v in settings.CHOICES.items()},
                 "data_folder": str(self.db_path.parent), "model": self.model,
-                "netstats_command": "pcassist netstats --seconds 60"}
+                "netstats_command": "vigil netstats --seconds 60"}
 
-    def job(self, task, action) -> dict:
+    def job(self, task, action, values=None) -> dict:
         if task not in setup_tasks.TASKS or action not in setup_tasks.ACTIONS:
             raise ApiError("unknown job or action")
-        ok, text = setup_tasks.change_task(task, action, *self._runner_args())
+        if values:
+            self.save_settings(values, reinstall=False)
+        ok, text = setup_tasks.change_task(task, action, *self._runner_args(), cfg=settings.load(self.db_path.parent))
         self._forget_cache()
         return {"ok": ok, "output": text}
 
+    SCHEDULE_KEYS = {"collect": "collect_interval", "alerts": "alerts_interval", "digest": "digest_time"}
+
+    def save_settings(self, values, reinstall: bool = True) -> dict:
+        """Store the user's choices; a job that is installed and whose schedule changed is installed again with the new one."""
+        if not isinstance(values, dict):
+            raise ApiError("bad settings")
+        try:
+            clean = settings.clean(values)
+        except ValueError as e:
+            raise ApiError(str(e)) from None
+        before = settings.load(self.db_path.parent)
+        after = settings.save(self.db_path.parent, clean)
+        problems = []
+        if reinstall:
+            state = setup_tasks.tasks_status(*self._runner_args())
+            for task, key in self.SCHEDULE_KEYS.items():
+                if state.get(task) and before[key] != after[key]:
+                    ok, text = setup_tasks.change_task(task, "install", *self._runner_args(), cfg=after)
+                    if not ok:
+                        problems.append(f"{task}: {text}")
+            self._forget_cache("jobs")
+        if problems:
+            raise ApiError("saved, but could not update the schedule: " + "; ".join(problems)[:300], 500)
+        return {"ok": True, "settings": after}
+
     def test_notification(self) -> dict:
-        return {"ok": bool(self._notify("pcassist test", "If you can read this, notifications reach you."))}
+        return {"ok": bool(self._notify("vigil test", "If you can read this, notifications reach you."))}
 
     def run_digest(self) -> dict:
         d = digest.run(self.db_path, notify_fn=self._notify, refresh_report=True)
@@ -269,7 +317,7 @@ class App:
 # ---------------------------------------------------------------- HTTP
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "pcassist"
+    server_version = "vigil"
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *args) -> None:   # quiet: the terminal is not a log
@@ -320,7 +368,7 @@ class Handler(BaseHTTPRequestHandler):
     def _authorized(self) -> bool:
         if self._cookie_ok():
             return True
-        self._json(401, {"error": "not authorized: open the address that `pcassist ui` printed"})
+        self._json(401, {"error": "not authorized: open the address that `vigil ui` printed"})
         return False
 
     # -- routes
@@ -335,7 +383,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(302, b"", "text/plain", {"Location": "/", "Set-Cookie": f"pca={self.server.token}; HttpOnly; SameSite=Strict; Path=/"})
                 return
             if not self._cookie_ok():
-                self._send(403, b"Open the address that `pcassist ui` printed in the terminal.", "text/plain; charset=utf-8")
+                self._send(403, b"Open the address that `vigil ui` printed in the terminal.", "text/plain; charset=utf-8")
                 return
             nonce = secrets.token_urlsafe(12)
             csp = (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self'; "
@@ -398,7 +446,8 @@ class Handler(BaseHTTPRequestHandler):
             ("POST", "reset"): lambda: app.reset_chat(sid),
             ("POST", "ack"): lambda: app.acknowledge(body.get("id"), body.get("note")),
             ("POST", "forget"): lambda: app.forget(body.get("id")),
-            ("POST", "job"): lambda: app.job(body.get("task"), body.get("action")),
+            ("POST", "job"): lambda: app.job(body.get("task"), body.get("action"), body.get("settings")),
+            ("POST", "settings"): lambda: app.save_settings(body.get("settings")),
             ("POST", "notify"): lambda: app.test_notification(),
             ("POST", "digest"): lambda: app.run_digest(),
             ("POST", "quit"): lambda: self.server.request_stop() or {"ok": True},
@@ -465,7 +514,7 @@ def serve(db_path, port: int = 8765, model: str = "qwen3:8b", open_browser: bool
     if ready_json:
         print(json.dumps({"url": url, "port": server.server_address[1], "token": server.token}), flush=True)
     else:
-        print(f"pcassist is running at {url}\nClose the browser tab and it stops by itself (or press Ctrl+C).", flush=True)
+        print(f"vigil is running at {url}\nClose the browser tab and it stops by itself (or press Ctrl+C).", flush=True)
     threading.Thread(target=app.warm, daemon=True).start()
     if idle_seconds > 0:
         threading.Thread(target=server.watch_idle, daemon=True).start()

@@ -1,8 +1,8 @@
 r"""Fill a SEPARATE database with synthetic history, for trying out chat/forecast without waiting.
 
     .\.venv\Scripts\python.exe scripts\seed_fake.py [--days 14] [--out data\fake.db]
-    .\.venv\Scripts\python.exe -m pcassist chat --db data\fake.db
-(use the project venv: the system python does not have pcassist installed)
+    .\.venv\Scripts\python.exe -m vigil chat --db data\fake.db
+(use the project venv: the system python does not have vigil installed)
 """
 import argparse
 import math
@@ -10,7 +10,7 @@ import random
 import time
 from pathlib import Path
 
-from pcassist import db
+from vigil import db
 
 STEP = 300  # seconds between samples (real collector uses 30; 5 min keeps the file small)
 PROCS = [("chrome.exe", 6, 1800), ("Code.exe", 4, 900), ("python.exe", 8, 400),

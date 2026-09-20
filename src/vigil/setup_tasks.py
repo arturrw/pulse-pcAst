@@ -27,7 +27,7 @@ def _run(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
 def tasks_status(runner=_run) -> dict[str, str | None]:
     """{'collect': 'Running' | 'Ready' | 'Disabled' | None (not installed), ...}"""
     script = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
-              "ConvertTo-Json -InputObject @(Get-ScheduledTask | Where-Object { $_.TaskName -like 'pcassist-*' } | "
+              "ConvertTo-Json -InputObject @(Get-ScheduledTask | Where-Object { $_.TaskName -like 'vigil-*' } | "
               "ForEach-Object { [pscustomobject]@{ n = $_.TaskName; s = $_.State.ToString() } }) -Compress")
     try:
         code, out = runner(["powershell", "-NoProfile", "-NonInteractive", "-Command", script])
@@ -36,10 +36,10 @@ def tasks_status(runner=_run) -> dict[str, str | None]:
         return {t: None for t in TASKS}
     rows = rows if isinstance(rows, list) else [rows]
     state = {r["n"]: r["s"] for r in rows if isinstance(r, dict) and "n" in r}
-    return {t: state.get(f"pcassist-{t}") for t in TASKS}
+    return {t: state.get(f"vigil-{t}") for t in TASKS}
 
 
-def change_task(task: str, action: str, runner=_run) -> tuple[bool, str]:
+def change_task(task: str, action: str, runner=_run, cfg: dict | None = None) -> tuple[bool, str]:
     """Install or remove one background job with our own script. Anything else is refused."""
     if task not in TASKS or action not in ACTIONS:
         return False, "unknown job or action"
@@ -47,8 +47,12 @@ def change_task(task: str, action: str, runner=_run) -> tuple[bool, str]:
         return False, "scripts/autostart.ps1 was not found (this needs a source checkout of the project)"
     try:
         cmd = ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File", str(SCRIPT), action, "-Task", task]
+        cfg = cfg or {}
+        if action == "install":                  # the schedule; every value was validated by settings.clean (digits or hh:mm)
+            cmd += {"collect": ["-Interval", str(cfg.get("collect_interval", 30))], "alerts": ["-Minutes", str(cfg.get("alerts_interval", 15))],
+                    "digest": ["-At", str(cfg.get("digest_time", "09:00"))]}[task]
         if paths.frozen():                       # the jobs run the installed program, not a python from a checkout
-            cmd += ["-Exe", str(Path(sys.executable).with_name("pcassistw.exe"))]
+            cmd += ["-Exe", str(Path(sys.executable).with_name("vigilw.exe"))]
         code, out = runner(cmd, 120)
     except (OSError, subprocess.SubprocessError) as e:
         return False, f"could not run PowerShell: {e}"

@@ -3,7 +3,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from pcassist import scan, tools
+from vigil import scan, tools
 
 
 def _sandbox() -> tuple[Path, set[str]]:

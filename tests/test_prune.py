@@ -3,7 +3,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from pcassist import db
+from vigil import db
 
 
 def _count(conn, table):

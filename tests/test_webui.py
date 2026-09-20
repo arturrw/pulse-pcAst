@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 
-from pcassist import db, persistence, setup_tasks, webui, winhealth
+from vigil import db, persistence, setup_tasks, webui, winhealth
 
 winhealth.read_raw = lambda hours: {}                 # never read this machine's event logs, registry or autostart
 winhealth.read_defender_policy = lambda: {}
@@ -52,7 +52,7 @@ class Runner:
         self.calls.append(cmd)
         if "-File" in cmd:
             return 0, "Installed."
-        return 0, json.dumps([{"n": "pcassist-collect", "s": self.state}])
+        return 0, json.dumps([{"n": "vigil-collect", "s": self.state}])
 
 
 class Running:
@@ -116,7 +116,7 @@ def test_the_page_needs_the_token_sets_a_strict_cookie_and_carries_a_matching_no
         assert "HttpOnly" in cookie and "SameSite=Strict" in cookie and s.token in cookie
         code, hdr, body = s.request("GET", "/")
         text = body.decode()
-        assert code == 200 and "pcassist" in text
+        assert code == 200 and "Vigil" in text
         nonce = re.search(r"script-src 'nonce-([^']+)'", hdr["Content-Security-Policy"]).group(1)
         assert f'<script nonce="{nonce}">' in text and f'<style nonce="{nonce}">' in text     # only our own script may run
         assert "default-src 'none'" in hdr["Content-Security-Policy"] and "frame-ancestors 'none'" in hdr["Content-Security-Policy"]
@@ -252,6 +252,24 @@ def test_the_assistant_keeps_the_conversation_and_says_what_is_wrong_when_the_mo
         down.stop()
 
 
+def test_saving_settings_reinstalls_only_the_installed_job_whose_schedule_changed():
+    run = Runner()
+    s = Running(runner=run)
+    try:
+        n = len(run.calls)
+        code, r = s.api("POST", "settings", {"settings": {"quiet_on": True, "quiet_from": "22:30"}})
+        assert code == 200 and r["settings"]["quiet_from"] == "22:30"
+        assert not any("install" in c for c in run.calls[n:])            # a quiet-hours change needs no reinstall
+        code, _ = s.api("POST", "settings", {"settings": {"collect_interval": 60}})
+        assert code == 200 and run.calls[-1][-2:] == ["-Interval", "60"] and "collect" in run.calls[-1]
+        n = len(run.calls)
+        s.api("POST", "settings", {"settings": {"alerts_interval": 5}})  # alerts is not installed: nothing to redo
+        assert not any("install" in c for c in run.calls[n:])
+        assert s.api("GET", "setup")[1]["settings"]["collect_interval"] == 60
+    finally:
+        s.stop()
+
+
 def test_only_the_three_known_jobs_and_two_actions_can_be_run_and_nothing_user_typed_reaches_the_command():
     run = Runner()
     s = Running(runner=run)
@@ -260,7 +278,11 @@ def test_only_the_three_known_jobs_and_two_actions_can_be_run_and_nothing_user_t
         assert code == 200 and r["ok"] is True
         cmd = run.calls[-1]
         assert cmd[:6] == ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File"]
-        assert cmd[-3:] == ["install", "-Task", "digest"] and cmd[6].endswith("autostart.ps1")
+        assert cmd[6].endswith("autostart.ps1") and cmd[7:10] == ["install", "-Task", "digest"] and cmd[10:] == ["-At", "09:00"]
+        code, r = s.api("POST", "job", {"task": "alerts", "action": "install", "settings": {"alerts_interval": 30}})
+        assert code == 200 and run.calls[-1][-2:] == ["-Minutes", "30"]
+        for bad in ({"alerts_interval": "5; calc"}, {"digest_time": "9am"}, {"digest_time": "09:00 -Foo"}, {"x": 1}, {"quiet_on": "yes"}):
+            assert s.api("POST", "job", {"task": "alerts", "action": "install", "settings": bad})[0] == 400, bad
         n = len(run.calls)
         for bad in ({"task": "digest; calc", "action": "install"}, {"task": "collect", "action": "format"}, {"task": "../x", "action": "remove"},
                     {"task": None, "action": "install"}, {"task": ["digest"], "action": "install"}):
@@ -276,7 +298,7 @@ def test_only_the_three_known_jobs_and_two_actions_can_be_run_and_nothing_user_t
 def test_test_notification_and_digest_now_use_the_notifier_and_report_what_they_did():
     s = Running()
     try:
-        assert s.api("POST", "notify", {})[1]["ok"] is True and s.notified[0][0] == "pcassist test"
+        assert s.api("POST", "notify", {})[1]["ok"] is True and s.notified[0][0] == "vigil test"
         d = s.api("POST", "digest", {})[1]
         assert d["title"].startswith("Morning digest") and d["shown"] is True and s.notified[-1][0] == d["title"]
         assert (s.path.parent / "digest.log").exists() and (s.path.parent / "reports" / "latest.html").exists()
@@ -306,7 +328,7 @@ def test_the_page_script_is_valid_javascript():
     import shutil
     import subprocess
 
-    from pcassist import webui_page
+    from vigil import webui_page
 
     node = shutil.which("node")
     if not node:

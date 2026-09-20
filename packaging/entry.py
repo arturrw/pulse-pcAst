@@ -6,6 +6,6 @@ for name in ("stdout", "stderr"):
     if getattr(sys, name) is None:
         setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
 
-from pcassist.cli import main  # noqa: E402
+from vigil.cli import main  # noqa: E402
 
 raise SystemExit(main())

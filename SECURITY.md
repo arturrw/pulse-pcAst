@@ -12,6 +12,6 @@ will be moved to a private channel.
 
 **Things worth knowing**
 - `data/` holds your history, including the list of public addresses your PC talked to. It is git-ignored; do not
-  commit or share it, and delete it (or run `pcassist prune --days 0`) if you want the history gone.
+  commit or share it, and delete it (or run `vigil prune --days 0`) if you want the history gone.
 - The tool never claims a program is malicious or safe. Treat its findings as hints and verify them yourself
   (Task Manager -> Open file location, a Windows Defender scan).

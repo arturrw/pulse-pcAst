@@ -78,7 +78,7 @@ CREATE TABLE IF NOT EXISTS autorun_kinds (
     kind TEXT PRIMARY KEY
 );
 
--- the last on-demand traffic measurements (pcassist netstats): bytes per process over a short window
+-- the last on-demand traffic measurements (vigil netstats): bytes per process over a short window
 CREATE TABLE IF NOT EXISTS net_traffic (
     ts REAL,
     name TEXT,

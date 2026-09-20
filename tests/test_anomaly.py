@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from test_games import _write_pm  # noqa: E402
 
-from pcassist import anomaly, db, tools  # noqa: E402
+from vigil import anomaly, db, tools  # noqa: E402
 
 
 def _wave(n=600):
@@ -101,7 +101,7 @@ def test_tool_rejects_load_metrics_and_reports_no_data():
     r = tools.anomalies("gpu_util_percent", 600)
     assert "error" in r and "gpu_temp_c" in r["available"]
     tools.set_db(Path(tempfile.mkdtemp()) / "empty.db")
-    assert "pcassist collect" in tools.anomalies("ram_percent", 600)["error"]
+    assert "vigil collect" in tools.anomalies("ram_percent", 600)["error"]
 
 
 def test_event_during_a_recorded_game_is_marked():

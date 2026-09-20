@@ -206,7 +206,7 @@ def startup_section(hours: float) -> str:
 
 
 def traffic_section() -> str:
-    """The latest `pcassist netstats` measurement, if it is not older than a week."""
+    """The latest `vigil netstats` measurement, if it is not older than a week."""
     with db.connect(tools._db_path) as conn:
         ts = conn.execute("SELECT MAX(ts) FROM net_traffic").fetchone()[0]
         if ts is None or time.time() - ts > 7 * 86400:
@@ -274,7 +274,7 @@ def build_report(hours: float = 24, now: float | None = None) -> str:
         stamps = [t for (t,) in conn.execute(f"SELECT ts FROM {table} WHERE ts >= ? ORDER BY ts", (now - hours * 3600,))]
     recorded = tools._recorded_seconds(stamps) / 3600
     if len(stamps) < 2:
-        body = "<section><p>No collected data in this period. Start the collector: <code>pcassist collect</code>.</p></section>"
+        body = "<section><p>No collected data in this period. Start the collector: <code>vigil collect</code>.</p></section>"
     else:
         cov = (f"<p class='warn'>The collector recorded only {recorded:.1f} h of these {hours:g} h "
                "(the PC was off or asleep in between); gaps are left blank.</p>") if recorded < hours * 0.8 else ""

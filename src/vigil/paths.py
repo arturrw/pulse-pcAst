@@ -11,7 +11,14 @@ def frozen() -> bool:
 
 def data_dir() -> Path:
     if frozen():
-        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local") / "pcassist"
+        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+        new, old = base / "Vigil", base / "pcassist"       # the app used to be called pcassist: keep its data
+        if old.exists() and not new.exists():
+            try:
+                old.rename(new)
+            except OSError:
+                return old
+        return new
     return Path(__file__).resolve().parents[2] / "data"
 
 

@@ -4,7 +4,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from pcassist import db, persistence, report, tools, winhealth
+from vigil import db, persistence, report, tools, winhealth
 
 
 # These tests must not read this machine's event logs or autostart entries: both sources are empty here.
@@ -57,7 +57,7 @@ def test_machine_supplied_names_are_escaped():
 def test_empty_database_still_produces_a_page():
     tools.set_db(Path(tempfile.mkdtemp()) / "empty.db")
     html = report.build_report(24)
-    assert "No collected data" in html and "pcassist collect" in html and html.startswith("<!doctype html>")
+    assert "No collected data" in html and "vigil collect" in html and html.startswith("<!doctype html>")
 
 
 def test_a_gap_splits_the_line_and_a_short_recording_is_reported():
@@ -70,7 +70,7 @@ def test_a_gap_splits_the_line_and_a_short_recording_is_reported():
 def test_health_and_startup_sections_show_findings_and_mark_accepted_ones():
     from datetime import datetime, timedelta
 
-    from pcassist import ack
+    from vigil import ack
 
     path = _db()
     iso = lambda m: (datetime.now() - timedelta(minutes=m)).strftime("%Y-%m-%dT%H:%M:%S.0+03:00")

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import psutil
 
-from pcassist import alerts, binaries, collectors, db, netwatch, persistence, tools, winhealth
+from vigil import alerts, binaries, collectors, db, netwatch, persistence, tools, winhealth
 
 
 # These tests must not read this machine's event logs or autostart entries: both sources are empty here.

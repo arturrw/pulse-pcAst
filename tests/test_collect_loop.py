@@ -4,7 +4,7 @@ import argparse
 import tempfile
 from pathlib import Path
 
-from pcassist import cli, db
+from vigil import cli, db
 
 
 class FakeCollector:

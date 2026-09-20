@@ -97,6 +97,22 @@ def test_health_and_startup_sections_show_findings_and_mark_accepted_ones():
     assert "Startup changes" in html and "Sneaky" in html and "script host" in html
 
 
+def test_the_last_traffic_measurement_is_shown_only_while_it_is_recent():
+    path = _db()
+    assert "Last traffic measurement" not in report.build_report(2)
+    conn = db.connect(path)
+    ts = time.time() - 60                                     # one measurement: all its rows share the time
+    conn.execute("INSERT INTO net_traffic VALUES (?,?,?,?,?,?)", (ts, "uploader.exe", 40 * 1024 * 1024, 2048, 60.0, "8.8.8.8:443"))
+    conn.execute("INSERT INTO net_traffic VALUES (?,?,?,?,?,?)", (ts, "<b>evil</b>.exe", 10, 10, 60.0, ""))
+    conn.commit()
+    html = report.build_report(2)
+    assert "Last traffic measurement" in html and "uploader.exe" in html and "40.0 MB" in html and "8.8.8.8:443" in html
+    assert "<b>evil</b>" not in html and "&lt;b&gt;evil" in html                                  # names are escaped
+    conn.execute("UPDATE net_traffic SET ts = ts - ?", (8 * 86400,))
+    conn.commit()
+    assert "Last traffic measurement" not in report.build_report(2)                                # older than a week: not shown
+
+
 def test_chart_axes_never_go_below_zero_for_percent():
     _db()
     html = report.build_report(2)

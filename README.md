@@ -171,6 +171,21 @@ powershell -File scripts\autostart.ps1 install -Task alerts  # check every 15 mi
 If the test notification does not appear, check that Windows Focus assist / Do not disturb is off; the alerts still
 reach `data/alerts.log` and the report. Thresholds are at the top of `src/pcassist/alerts.py`.
 
+## Traffic per process (on demand)
+The collector knows which process talks to which address, but not how much: Windows does not give per-process network
+volume to normal programs (checked: the I/O counters of a process that moves 30 MB over a socket show 0). The one real
+source is ETW, the system's event tracing, and starting a trace needs administrator rights. So this is a command you run
+yourself, in a terminal opened as administrator, when you want to know who is uploading right now:
+```powershell
+pcassist netstats --seconds 60          # measure 60 s; --all adds loopback and LAN; --debug shows what was read
+```
+It starts a short trace of `Microsoft-Windows-Kernel-Network` with `logman`, stops it, adds the sizes up per process and
+destination (TCP and UDP, IPv4 and IPv6, sent and received separately), prints a table, notes any process that sent 20 MB
+or more, keeps the top rows for the report, and **deletes the trace file** (it holds the addresses you talked to;
+`--keep` keeps it). Nothing stays running with high rights, nothing on the machine is changed besides the temporary
+trace session, and nothing is sent anywhere. A big upload from a browser or a sync client is normal: the point is to
+see who talks how much. Without administrator rights the command says so and starts nothing.
+
 ## Morning digest
 `pcassist digest` builds one short notification for the last 24 hours: "nothing new to look at", or the few things that
 need a look (open Windows / Defender findings, a new suspicious autostart entry, a flagged process, an unusual high
@@ -344,6 +359,7 @@ python tests\test_winhealth.py       # Windows event log / Defender findings fro
 python tests\test_persistence.py     # autostart snapshot, baseline and suspicious-command checks, no Ollama needed
 python tests\test_ack.py             # accepted risks, no Ollama needed
 python tests\test_digest.py          # the morning digest, no Ollama needed
+python tests\test_netstats.py        # traffic measurement with a fake trace runner (never starts a real trace)
 python tests\test_timeline.py        # time parsing and the timeline of one moment, no Ollama needed
 python tests\test_alerts.py          # alert checks, cooldown and notification log, no Ollama needed
 python tests\test_collect_loop.py   # collector survives bad samples

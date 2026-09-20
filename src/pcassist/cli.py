@@ -176,6 +176,25 @@ def cmd_digest(args: argparse.Namespace) -> None:
         print("Notification shown." if d.get("shown") else "The notification could not be shown; it is in data/digest.log.")
 
 
+def cmd_netstats(args: argparse.Namespace) -> None:
+    from . import netstats
+
+    workdir = Path(args.db).parent / "netstats"
+    try:
+        rows = netstats.capture(args.seconds, workdir, keep=args.keep, progress=print)
+    except netstats.NetstatsError as e:
+        raise SystemExit(f"netstats: {e}")
+    if args.debug:
+        ids = {}
+        for r in rows:
+            ids[r["id"]] = ids.get(r["id"], 0) + 1
+        print(f"debug: {len(rows)} aggregated records, per event id: {ids}; first: {rows[:2]}")
+    result = netstats.summarize(rows, netstats.names_of({r["pid"] for r in rows}), args.seconds, args.all)
+    print(netstats.format_report(result, args.seconds, args.all))
+    conn = db.connect(args.db)
+    netstats.save(conn, result, args.seconds)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pcassist")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -247,6 +266,14 @@ def main(argv: list[str] | None = None) -> int:
     dg.add_argument("--no-report", action="store_true", help="do not refresh data/reports/latest.html")
     dg.add_argument("--db", default=str(db.DEFAULT_DB))
     dg.set_defaults(func=cmd_digest)
+
+    ns = sub.add_parser("netstats", help="who sends and receives how much (run in a terminal opened as administrator)")
+    ns.add_argument("--seconds", type=int, default=60, help="how long to measure")
+    ns.add_argument("--all", action="store_true", help="include loopback and LAN traffic")
+    ns.add_argument("--keep", action="store_true", help="keep the trace file (data/netstats/net.etl): it holds the addresses you talked to")
+    ns.add_argument("--debug", action="store_true", help="print how many records of each event id were read")
+    ns.add_argument("--db", default=str(db.DEFAULT_DB))
+    ns.set_defaults(func=cmd_netstats)
 
     ak = sub.add_parser("ack", help="accept a finding you know about (it stops alerting, stays in the report) or list them")
     ak.add_argument("finding", nargs="?", help="finding id, e.g. defender-realtime-off; an id ending in * matches a prefix")

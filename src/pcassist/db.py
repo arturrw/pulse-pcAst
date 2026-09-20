@@ -76,6 +76,16 @@ CREATE TABLE IF NOT EXISTS autorun_kinds (
     kind TEXT PRIMARY KEY
 );
 
+-- the last on-demand traffic measurements (pcassist netstats): bytes per process over a short window
+CREATE TABLE IF NOT EXISTS net_traffic (
+    ts REAL,
+    name TEXT,
+    sent INTEGER,
+    received INTEGER,
+    seconds REAL,
+    top_destination TEXT
+);
+
 CREATE TABLE IF NOT EXISTS binaries (
     exe TEXT PRIMARY KEY,
     mtime REAL,
@@ -122,6 +132,7 @@ def prune(conn: sqlite3.Connection, keep_days: float, now: float | None = None) 
         removed += conn.execute(f"DELETE FROM {table} WHERE ts < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM process_exes WHERE last_seen < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM process_connections WHERE last_seen < ?", (cutoff,)).rowcount
+    removed += conn.execute("DELETE FROM net_traffic WHERE ts < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM binaries WHERE checked_ts < ?", (cutoff,)).rowcount
     # autoruns keep their baseline (first_seen), so only entries that disappeared long ago are dropped
     removed += conn.execute("DELETE FROM autoruns WHERE last_seen < ?", (cutoff,)).rowcount

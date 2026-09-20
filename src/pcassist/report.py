@@ -5,7 +5,7 @@ chat always agree. Names that come from the machine (process names) are HTML-esc
 import time
 from html import escape
 
-from . import alerts, anomaly, db, tools
+from . import alerts, anomaly, db, netstats, tools
 
 CHARTS = [("gpu_temp_c", "GPU temperature", "°C"), ("cpu_percent", "CPU load", "%"),
           ("ram_percent", "RAM used", "%"), ("gpu_util_percent", "GPU load", "%")]
@@ -205,6 +205,20 @@ def startup_section(hours: float) -> str:
     return f"<h2>Startup changes</h2>{body}<p class='mute'>Run keys, startup folders, scheduled tasks and services; only changes after the first snapshot are reported.</p>"
 
 
+def traffic_section() -> str:
+    """The latest `pcassist netstats` measurement, if it is not older than a week."""
+    with db.connect(tools._db_path) as conn:
+        ts = conn.execute("SELECT MAX(ts) FROM net_traffic").fetchone()[0]
+        if ts is None or time.time() - ts > 7 * 86400:
+            return ""
+        rows = conn.execute("SELECT name, sent, received, seconds, top_destination FROM net_traffic WHERE ts = ? "
+                            "ORDER BY sent DESC LIMIT 8", (ts,)).fetchall()
+    table = _table(["process", "sent", "received", "biggest destination"],
+                   [[escape(n), netstats.human(sent), netstats.human(recv), escape(top or "")] for n, sent, recv, _, top in rows])
+    return (f"<h2>Last traffic measurement</h2><p class='mute'>{_clock(ts, '%Y-%m-%d %H:%M')}, {rows[0][3]:.0f} s, public addresses "
+            f"only. One short window: a browser uploading a file is normal.</p>{table}")
+
+
 def alerts_section() -> str:
     lines = alerts.recent_log(tools._db_path)
     if not lines:
@@ -265,7 +279,7 @@ def build_report(hours: float = 24, now: float | None = None) -> str:
         cov = (f"<p class='warn'>The collector recorded only {recorded:.1f} h of these {hours:g} h "
                "(the PC was off or asleep in between); gaps are left blank.</p>") if recorded < hours * 0.8 else ""
         charts = "".join(chart(m, t, u, hours, now) for m, t, u in CHARTS)
-        body = "".join(f"<section>{s}</section>" for s in (cov + overview(hours, now), unusual(hours), alerts_section(), health_section(hours), startup_section(hours), watch(hours), charts,
+        body = "".join(f"<section>{s}</section>" for s in (cov + overview(hours, now), unusual(hours), alerts_section(), health_section(hours), startup_section(hours), watch(hours), traffic_section(), charts,
                                                           disks(), processes(hours), games()) if s)
     return (f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>PC report</title><style>{STYLE}</style></head><body><main><h1>PC report</h1>"

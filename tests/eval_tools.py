@@ -18,6 +18,7 @@ from pcassist import chat, tools
 def num_in(answer: str, value) -> bool:
     """True if the number appears in the answer (accepts 53.6 / 53,6 and 48 for 48.0)."""
     text = answer.replace(",", ".")
+    text = re.sub(r"(?<=\d)[   ](?=\d{3}(?!\d))", "", text)   # thousands separator: 1 843 -> 1843
     forms = {f"{value:g}"}
     if isinstance(value, float):
         forms.add(f"{value:.1f}")
@@ -75,7 +76,9 @@ def history_answer(answer, results):
 
 def spike_answer(answer, results):
     """'Was there a spike?' must be answered with max AND avg/when, not a bare max called a jump."""
-    r = first(results, "metrics_history")
+    r = first(results, "metrics_history") or first(results, "anomalies").get("range", {})   # either tool carries the numbers
+    if not r:
+        return "no metrics_history or anomalies range in the results"
     if "error" in r:
         return history_answer(answer, results)
     for key in ("max", "avg", "max_was_minutes_ago"):
@@ -85,7 +88,7 @@ def spike_answer(answer, results):
 
 
 HEDGE = re.compile(r"недостаточно|мало данных|ненадёжн|ненадежн|неточн|приблизительн|предварительн|"
-                   r"только за|всего за|пока что|нельзя (?:точно|надёжно|надежно)|низк\w+ (?:точност|достоверност)",
+                   r"только за|всего за|пока что|больше данных|нельзя (?:точно|надёжно|надежно)|низк\w+ (?:точност|достоверност)",
                    re.IGNORECASE)
 
 
@@ -147,6 +150,21 @@ def game_none_answer(answer, results):
     return "FPS numbers in an answer without recordings" if re.search(r"\d+\s*(fps|кадр)", answer, re.I) else None
 
 
+def cyrillic_share(text: str) -> float:
+    letters = re.findall(r"[A-Za-zЀ-ӿ]", text)
+    return sum("Ѐ" <= ch <= "ӿ" for ch in letters) / max(1, len(letters))
+
+
+def answer_in_english(answer, results):
+    share = cyrillic_share(answer)
+    return f"English question answered in Russian ({share:.0%} Cyrillic)" if share > 0.15 else None
+
+
+def answer_in_russian(answer, results):
+    share = cyrillic_share(answer)
+    return f"Russian question answered in another language ({share:.0%} Cyrillic)" if share < 0.5 else None
+
+
 def covers_stated(answer: str, minutes: float) -> bool:
     """The coverage in minutes ("345") or as hours and minutes ("5 часов 45 минут")."""
     return num_in(answer, minutes) or (num_in(answer, minutes // 60) and num_in(answer, round(minutes % 60)))
@@ -156,7 +174,7 @@ def anomalies_answer(answer, results):
     r = first(results, "anomalies")
     if "error" in r:
         return None
-    if r["events_found"] == 0 and not re.search(r"не (?:было|найден|обнаружен|выявл)|нет |ничего|не замет|отсутств", answer, re.I):
+    if r["events_found"] == 0 and not re.search(r"не (?:было|найден|обнаружен|выявл|зафиксир|наблюда)|нет |ничего|не замет|отсутств|no unusual|none|nothing", answer, re.I):
         return "no events found but the answer does not say that"
     if "warning" in r and not covers_stated(answer, r["data_covers_minutes"]):
         return f"short coverage ({r['data_covers_minutes']} min) not stated in answer"
@@ -172,12 +190,12 @@ COMMON = [no_markdown, no_double_backslash]
 CASES = [
     ("какая нагрузка диска", {"current_status"}, {"disk_usage"}, [disk_load_answer], None),
     ("сколько свободного места на дисках?", {"disk_usage"}, {"current_status", "disk_forecast"},
-     [free_space_answer], None),
+     [free_space_answer, answer_in_russian], None),
     ("когда закончится место на диске?", {"disk_forecast"}, set(), [forecast_answer], None),
     ("когда закончится место на диске?", {"disk_forecast"}, set(), [forecast_answer], "EMPTY"),
     ("что сейчас больше всего грузит систему?", {"current_status"}, set(), [], None),
     ("как менялась температура GPU за последний час?", {"metrics_history"}, set(), [history_answer], None),
-    ("был ли за последний час скачок температуры GPU?", {"metrics_history"}, set(), [spike_answer], None),
+    ("был ли за последний час скачок температуры GPU?", set(), set(), [spike_answer], None),
     ("какие процессы грузили процессор за последние 10 минут?", {"top_processes"}, set(), [], None),
     ("какая сейчас температура видеокарты?", {"current_status"}, {"metrics_history"}, [], None),
     ("как менялась температура GPU за последний час?", {"metrics_history"}, set(), [history_answer], "EMPTY"),
@@ -190,6 +208,13 @@ CASES = [
      [anomalies_answer], None),
     ("были ли аномалии в использовании оперативной памяти за последние сутки?", {"anomalies"}, set(),
      [anomalies_answer], None),
+    ("how much free space do I have on my disks?", {"disk_usage"}, set(), [free_space_answer, answer_in_english], None),
+    ("was there a spike in GPU temperature in the last hour?", set(), set(),
+     [spike_answer, answer_in_english], None),
+    ("compare recordings combo_base_1 and combo_fsr3_1", {"game_sessions_compare"}, set(),
+     [game_compare_answer, answer_in_english], None),
+    ("was there anything unusual with the GPU temperature in the last day?", {"anomalies"}, set(),
+     [anomalies_answer, answer_in_english], None),
     ("были ли аномалии в загрузке видеокарты за сутки?", set(), set(), [], None),   # load metric: any sane answer, no crash
 ]
 SLOW_CASES = [
@@ -219,6 +244,7 @@ def run_case(client, model: str, question: str, num_ctx: int):
 
 
 def main() -> int:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # answers may hold characters cp1251 cannot print
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="qwen3:8b")
     p.add_argument("--db", default=str(tools.db.DEFAULT_DB))

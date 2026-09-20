@@ -147,6 +147,21 @@ Parameters were tuned on the same data, so treat the numbers as optimistic:
 python tests\eval_nab.py --sweep
 ```
 
+## Choosing a model
+`tests/eval_tools.py` (21 questions in Russian and English: tool choice, numbers in the answer, answer language) on an
+RTX 3070 Ti with 8 GB VRAM and 32 GB RAM:
+
+| model | eval | time per question | memory |
+|---|---|---|---|
+| `qwen3:8b` (default) | 57/63 (90%) | ~5 s | fits in VRAM (6 GB) |
+| `gpt-oss:20b` (`--model gpt-oss:20b`) | 20/21 (95%) | ~18 s | 14 GB, 57% of it runs on the CPU |
+
+The difference is within the noise of these small samples, so the default stays the fast model; `gpt-oss:20b` is
+worth trying when answers must be as precise as possible and speed does not matter. Both fail the same way: a
+"was there a spike" question is sometimes routed to `anomalies` and the average is left out of the answer.
+The model copies examples from the system prompt, so keep the examples in it language-neutral (a Russian example
+made English questions get Russian answers, an English one the opposite).
+
 ## Tests
 `tests/eval_tools.py` checks that the model picks the right tool for typical questions
 (e.g. "disk load" -> `current_status`, "free space" -> `disk_usage`). Needs Ollama running:

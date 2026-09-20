@@ -368,6 +368,9 @@ def anomalies(metric: str, minutes: int = 1440) -> dict:
            "how_it_works": f"a value counts when it stays far outside the median of the previous ~{ANOMALY_WINDOW * step / 3600:.1f} h "
                            f"for at least {ANOMALY_MIN_RUN * step / 60:.0f} min; the first ~{ANOMALY_WINDOW // 4 * step / 60:.0f} min "
                            "after the collector (re)starts are not checked"}
+    hist = metrics_history(metric, minutes)   # min/avg/max in the same window, so a "spike?" question is answerable from here too
+    if "error" not in hist:
+        out["range"] = {k: hist[k] for k in ("min", "avg", "max", "max_was_minutes_ago", "latest")}
     out["summary"] = (f"{len(found)} unusual period(s) of {metric} in the last {int(minutes)} min"
                       + (f"; the collected data covers only ~{recorded:.0f} min of that" if recorded < int(minutes) * 0.5 else ""))
     if recorded < int(minutes) * 0.5:

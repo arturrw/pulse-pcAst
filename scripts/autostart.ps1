@@ -3,8 +3,9 @@
 #   powershell -File scripts\autostart.ps1 remove    # stop + unregister
 #   powershell -File scripts\autostart.ps1 status
 #   powershell -File scripts\autostart.ps1 install -Task alerts   # notifications, checked every 15 min
+#   powershell -File scripts\autostart.ps1 install -Task digest   # one summary notification every morning at 09:00
 param([Parameter(Mandatory)][ValidateSet('install', 'remove', 'status')][string]$Action,
-      [ValidateSet('collect', 'alerts')][string]$Task = 'collect')
+      [ValidateSet('collect', 'alerts', 'digest')][string]$Task = 'collect')
 
 $TaskName = "pcassist-$Task"
 $Root = Split-Path -Parent $PSScriptRoot
@@ -13,6 +14,17 @@ $Pythonw = Join-Path $Root '.venv\Scripts\pythonw.exe'   # pythonw = no console 
 switch ($Action) {
     'install' {
         if (-not (Test-Path $Pythonw)) { throw "Not found: $Pythonw (create .venv and run: pip install -e .)" }
+        if ($Task -eq 'digest') {
+            # Once a day at 09:00; StartWhenAvailable runs it when the PC is switched on later, so a late start still gets one.
+            $act = New-ScheduledTaskAction -Execute $Pythonw -Argument '-m pcassist digest' -WorkingDirectory $Root
+            $trg = New-ScheduledTaskTrigger -Daily -At 9:00AM
+            $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -StartWhenAvailable
+            Register-ScheduledTask -TaskName $TaskName -Action $act -Trigger $trg -Settings $set `
+                -Description 'pcassist morning digest (one summary notification)' -Force | Out-Null
+            Write-Host "Installed '$TaskName' (runs every day at 09:00)."
+            return
+        }
         if ($Task -eq 'alerts') {
             # One short check every 15 minutes; a check that is still running (a slow PowerShell call) is not doubled.
             $act = New-ScheduledTaskAction -Execute $Pythonw -Argument '-m pcassist alerts' -WorkingDirectory $Root

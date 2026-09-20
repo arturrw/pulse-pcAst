@@ -163,6 +163,19 @@ def cmd_ack(args: argparse.Namespace) -> None:
             print(f"{k}  (since {v.get('since', '?')})  {v.get('note', '')}")
 
 
+def cmd_digest(args: argparse.Namespace) -> None:
+    from . import digest
+
+    d = digest.run(args.db, dry_run=args.dry_run, refresh_report=not args.no_report)
+    print(d["title"])
+    for line in d["lines"]:
+        print("  " + line)
+    for item in d["todo"]:
+        print("  ! " + item)
+    if not args.dry_run:
+        print("Notification shown." if d.get("shown") else "The notification could not be shown; it is in data/digest.log.")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pcassist")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -228,6 +241,12 @@ def main(argv: list[str] | None = None) -> int:
     al.add_argument("--test", action="store_true", help="show a test notification and exit")
     al.add_argument("--db", default=str(db.DEFAULT_DB))
     al.set_defaults(func=cmd_alerts)
+
+    dg = sub.add_parser("digest", help="a short summary of the last 24 h as one notification (and a fresh report)")
+    dg.add_argument("--dry-run", action="store_true", help="only print it; show, log and write nothing")
+    dg.add_argument("--no-report", action="store_true", help="do not refresh data/reports/latest.html")
+    dg.add_argument("--db", default=str(db.DEFAULT_DB))
+    dg.set_defaults(func=cmd_digest)
 
     ak = sub.add_parser("ack", help="accept a finding you know about (it stops alerting, stays in the report) or list them")
     ak.add_argument("finding", nargs="?", help="finding id, e.g. defender-realtime-off; an id ending in * matches a prefix")

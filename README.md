@@ -124,8 +124,9 @@ still needs a human check: Task Manager -> Open file location, and a Windows Def
 Three read-only tools that ask Windows itself (PowerShell, no administrator rights needed):
 - **`system_health`** reads the Application, System and Defender event logs and Defender's status: blue screens,
   unexpected shutdowns, WHEA hardware errors, disk and graphics-driver errors, apps that keep crashing, whether
-  real-time protection is on, how old the signatures are, what Defender detected. The Security log (failed logins)
-  needs administrator rights and is not read.
+  real-time protection is on, how old the signatures are, what Defender detected, and the Group Policy registry
+  values that switch protection off (what "Defender disabler" and some game-booster tools write). The Security log
+  (failed logins) needs administrator rights and is not read.
 - **`startup_changes`** takes a snapshot of everything that starts by itself (Run keys, startup folders, scheduled
   tasks, services) every time the alert job runs. The **first snapshot is only a baseline**; afterwards every new or
   changed entry is reported, and flagged when its command hides what it runs (an encoded PowerShell command, a
@@ -133,7 +134,11 @@ Three read-only tools that ask Windows itself (PowerShell, no administrator righ
   with a broken signature. A new autostart entry is one of the strongest signs of malware, and installers add
   entries too, so it is a hint for a human look, not a verdict. This is the check that finds a scheduled task
   disguised as an "update" that silently starts a script: the kind of thing `process_watch` cannot see, because such a
-  program is quiet.
+  program is quiet. It also watches **WMI event subscriptions** (a hidden place to start things; one that runs a
+  command or script is "high") and the **extensions of Chromium browsers** (Edge, Chrome, Brave, Yandex, Vivaldi,
+  Opera): an extension loaded unpacked or from the command line is "high", one added by another program or forced by
+  policy "medium", built-in components are ignored, and a browser's developer-mode switch is noted. A kind of entry
+  the tool learns to read later joins the baseline in its first snapshot, so an update does not flood you with "new".
 - **`what_happened`** answers "what happened at 14:03" / "why did it freeze last night": one timeline of metric
   changes, processes and network destinations seen for the first time, new autostart entries, alerts sent, game
   recordings, gaps when the PC was off, and Windows events. It lines things up in time and does not say what caused
@@ -165,6 +170,17 @@ powershell -File scripts\autostart.ps1 install -Task alerts  # check every 15 mi
 ```
 If the test notification does not appear, check that Windows Focus assist / Do not disturb is off; the alerts still
 reach `data/alerts.log` and the report. Thresholds are at the top of `src/pcassist/alerts.py`.
+
+## Morning digest
+`pcassist digest` builds one short notification for the last 24 hours: "nothing new to look at", or the few things that
+need a look (open Windows / Defender findings, a new suspicious autostart entry, a flagged process, an unusual high
+stretch of temperature / RAM / swap, an almost full disk). The lines under it give the numbers (least free disk, hours
+actually recorded, alerts sent). Accepted risks are counted and shown ("3 accepted by you"), never hidden, and they do
+not make a day "not quiet". It also refreshes `data/reports/latest.html` and appends to `data/digest.log`.
+```powershell
+pcassist digest --dry-run                                    # print it, show and write nothing
+powershell -File scripts\autostart.ps1 install -Task digest  # every morning at 09:00 (runs later if the PC was off)
+```
 
 ## Report
 `pcassist report` writes one self-contained HTML file (inline SVG charts, no scripts, no network, light and dark
@@ -327,6 +343,7 @@ python tests\test_scan_guard.py      # path check on the model-facing folder sca
 python tests\test_winhealth.py       # Windows event log / Defender findings from recorded data, no Ollama needed
 python tests\test_persistence.py     # autostart snapshot, baseline and suspicious-command checks, no Ollama needed
 python tests\test_ack.py             # accepted risks, no Ollama needed
+python tests\test_digest.py          # the morning digest, no Ollama needed
 python tests\test_timeline.py        # time parsing and the timeline of one moment, no Ollama needed
 python tests\test_alerts.py          # alert checks, cooldown and notification log, no Ollama needed
 python tests\test_collect_loop.py   # collector survives bad samples

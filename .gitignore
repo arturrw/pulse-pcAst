@@ -1,7 +1,7 @@
 .venv/
 __pycache__/
 *.egg-info/
-data/*.db
-data/*.db-*
-data/sessions/
-data/bench/
+# everything under data/ is local: metrics DB, game recordings, Steam settings backups
+data/
+# local Claude Code settings
+.claude/

@@ -6,6 +6,8 @@ from pathlib import Path
 from pcassist import ack, tools, winhealth
 
 NOW = datetime(2026, 9, 20, 22, 0)
+_REAL_POLICY_READER = winhealth.read_defender_policy
+winhealth.read_defender_policy = lambda: {}      # never read this machine's registry in a test
 
 
 def _t(hours_ago: float) -> str:
@@ -34,6 +36,22 @@ def test_powershell_timestamps_parse_on_every_python_version():
     assert t("2026-09-20 13:13:29") == datetime(2026, 9, 20, 13, 13, 29)
     for bad in (None, "", "yesterday", "2026-13-40T99:99:99"):
         assert t(bad) is None, bad
+
+
+def test_group_policy_values_that_switch_defender_off_are_a_high_finding():
+    policy = {"DisableRealtimeMonitoring": 1, "DisableBehaviorMonitoring": 1, "DisableScriptScanning": 0}   # 0 = not off
+    r = winhealth.health(24, reader=lambda h: _raw(), now=NOW, policy_reader=lambda: policy)
+    f = {x["id"]: x for x in r["findings"]}["defender-policy-off"]
+    assert f["severity"] == "high" and "2 registry policy value(s)" in f["detail"] and "DisableRealtimeMonitoring" in f["detail"]
+    assert r["defender"]["policy_values_forcing_off"] == ["DisableBehaviorMonitoring", "DisableRealtimeMonitoring"]
+    assert "defender-policy-off" not in {x["id"] for x in winhealth.health(24, reader=lambda h: _raw(), now=NOW, policy_reader=lambda: {})["findings"]}
+    # no PowerShell data: still "unavailable", the policy must not turn that into "healthy"
+    assert winhealth.health(24, reader=lambda h: {}, policy_reader=lambda: policy)["available"] is False
+
+
+def test_the_registry_reader_returns_a_dict_and_never_raises():
+    out = _REAL_POLICY_READER()                      # the real reader, on whatever machine this runs on
+    assert isinstance(out, dict) and all(k in winhealth.POLICY_OFF for k in out)
 
 
 def test_a_healthy_machine_has_no_findings():

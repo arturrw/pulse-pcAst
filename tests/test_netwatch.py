@@ -11,6 +11,7 @@ from pcassist import alerts, binaries, collectors, db, netwatch, persistence, to
 
 # These tests must not read this machine's event logs or autostart entries: both sources are empty here.
 winhealth.read_raw = lambda hours: {}
+winhealth.read_defender_policy = lambda: {}
 persistence.read_items = lambda: []
 
 DAY = 86400.0

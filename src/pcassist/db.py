@@ -71,6 +71,11 @@ CREATE TABLE IF NOT EXISTS autoruns (
     PRIMARY KEY (kind, name, command)
 );
 
+-- which kinds of autostart entry the snapshot code knows how to read (see persistence.SUPPORTED_KINDS)
+CREATE TABLE IF NOT EXISTS autorun_kinds (
+    kind TEXT PRIMARY KEY
+);
+
 CREATE TABLE IF NOT EXISTS binaries (
     exe TEXT PRIMARY KEY,
     mtime REAL,

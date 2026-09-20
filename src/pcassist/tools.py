@@ -465,14 +465,14 @@ def process_watch(minutes: int = 1440) -> dict:
 def system_health(hours: int = 168) -> dict:
     """How the machine itself has been doing, from the Windows event logs and Windows Defender: blue screens, unexpected
     shutdowns, hardware and disk errors, graphics-driver resets, apps that keep crashing, and Defender's state
-    (real-time protection on or off, old signatures, threats it detected). Use it for "why did my PC crash / freeze",
+    (real-time protection on or off, Group Policy values that switch it off, old signatures, threats it detected). Use it for "why did my PC crash / freeze",
     "is my antivirus on", "did Defender find anything". Findings the user has accepted are marked `accepted` and are
     not counted as problems. The Security log (failed logins) needs administrator rights and is not read.
 
     Args:
         hours: How many hours back to look (default a week).
     """
-    r = winhealth.health(int(hours), reader=winhealth.read_raw)
+    r = winhealth.health(int(hours), reader=winhealth.read_raw, policy_reader=winhealth.read_defender_policy)
     if r.get("available"):
         ack.mark(_db_path, r["findings"])
         open_ = [f for f in r["findings"] if not f["accepted"]]
@@ -485,7 +485,8 @@ def system_health(hours: int = 168) -> dict:
 
 
 def startup_changes(hours: int = 168) -> dict:
-    """What starts by itself on this PC (Run keys, startup folders, scheduled tasks, services) and what changed:
+    """What starts by itself on this PC (Run keys, startup folders, scheduled tasks, services, WMI subscriptions,
+    browser extensions and the browsers' developer-mode switch) and what changed:
     entries that are new since the first snapshot, and old ones that already look bad (a hidden script host, an
     encoded PowerShell command, a download-and-run trick, a program started from Temp or Downloads, a broken
     signature). A new autostart entry is one of the strongest signs of malware, but installers add entries too:

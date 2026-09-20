@@ -110,6 +110,76 @@ def test_suspicious_patterns_fire_and_ordinary_commands_do_not():
     assert persistence._reasons("n", '"' + W("C:", "Program Files", "Ok", "ok.exe") + '" --autostart')[0] == []
 
 
+def _profile(root: Path, browser_dir: str, profile: str, settings: dict, dev_mode: bool = False) -> Path:
+    import json
+
+    folder = root.joinpath(browser_dir, profile) if profile else root.joinpath(browser_dir)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "Secure Preferences").write_text(json.dumps({"extensions": {"settings": settings, "ui": {"developer_mode": dev_mode}}}), encoding="utf-8")
+    return root / browser_dir
+
+
+def test_browser_extensions_are_read_by_where_they_came_from_and_components_are_skipped():
+    root = Path(tempfile.mkdtemp())
+    ext = lambda loc, name=None, path="": {"location": loc, "path": path, **({"manifest": {"name": name}} if name else {})}
+    base = _profile(root, "Edge", "Default", {
+        "aaa": ext(1, "Store Thing"), "bbb": ext(4, "Sideloaded", W("C:", "dev", "ext")), "ccc": ext(8, "Cmdline"),
+        "ddd": ext(5, "Built-in PDF viewer"), "eee": ext(10, "Component"), "fff": ext(9, "Forced"), "ggg": ext(2), "hhh": "junk"}, dev_mode=True)
+    opera = _profile(root, "OperaGX", "", {"ooo": ext(1, "Opera thing")}, dev_mode=False)
+    items = persistence.read_browser_extensions([("Edge", str(base)), ("Opera GX", str(opera)), ("Brave", str(root / "missing"))])
+    by = {i["name"]: i for i in items}
+    assert set(by) == {"Edge/Default/aaa", "Edge/Default/bbb", "Edge/Default/ccc", "Edge/Default/fff", "Edge/Default/ggg",
+                       "Edge/Default/developer_mode", "Opera GX/ooo"}                     # components, junk and a missing browser are skipped
+    assert by["Edge/Default/bbb"]["detail"] == "location=4" and "Sideloaded" in by["Edge/Default/bbb"]["command"]
+    assert by["Edge/Default/ggg"]["command"].startswith("ggg ")                             # no manifest name: the id is shown
+    assert by["Edge/Default/developer_mode"]["kind"] == "browser_setting"
+
+
+def test_extension_developer_mode_and_wmi_entries_are_judged_by_kind():
+    root, conn = _conn()
+    persistence.snapshot(conn, now=1000.0, reader=lambda: [_item("service", "Known", W("C:", "Windows", "k.exe"))])
+    new = [_item("service", "Known", W("C:", "Windows", "k.exe")),
+           {"kind": "browser_extension", "name": "Edge/Default/bbb", "command": "Sideloaded [loaded unpacked (developer mode)]", "detail": "location=4"},
+           {"kind": "browser_extension", "name": "Edge/Default/fff", "command": "Forced [forced by policy]", "detail": "location=9"},
+           {"kind": "browser_extension", "name": "Edge/Default/aaa", "command": "Store [installed from the store]", "detail": "location=1"},
+           {"kind": "browser_setting", "name": "Edge/Default/developer_mode", "command": "on", "detail": ""},
+           _item("wmi_consumer", "Evil", "CommandLineEventConsumer cmd.exe /c calc"),
+           _item("wmi_consumer", "SCM Event Log Consumer", "NTEventLogEventConsumer")]
+    persistence.snapshot(conn, now=2000.0, reader=lambda: new)
+    by = {x["name"]: x for x in persistence.assess(conn, 0)["new_or_changed"]}
+    assert by["Edge/Default/bbb"]["severity"] == "high" and "unpacked" in " ".join(by["Edge/Default/bbb"]["reasons"])
+    assert by["Edge/Default/fff"]["severity"] == "medium" and by["Edge/Default/aaa"]["severity"] == "low"
+    assert by["Edge/Default/developer_mode"]["severity"] == "medium" and by["Evil"]["severity"] == "high"
+    assert by["SCM Event Log Consumer"]["severity"] == "low"                                 # the default WMI consumer is normal
+
+
+def test_a_kind_added_by_a_tool_update_joins_the_baseline_but_an_empty_kind_stays_alert():
+    root, conn = _conn()
+    known = _item("service", "Known", W("C:", "Windows", "k.exe"))
+    persistence.snapshot(conn, now=1000.0, reader=lambda: [known])                 # a fresh baseline registers every kind
+    ext = lambda i: {"kind": "browser_extension", "name": f"Edge/Default/{i}", "command": f"E{i} [forced by policy]", "detail": "location=9"}
+    startup = _item("startup_folder", "evil.lnk", W("C:", "x", "evil.exe"))
+    persistence.snapshot(conn, now=1500.0, reader=lambda: [known, startup])        # the startup folder was EMPTY at baseline: this is news
+    assert [x["name"] for x in persistence.assess(conn, 0)["new_or_changed"]] == ["evil.lnk"]
+    # simulate a database from before this tool could read extensions: those kinds were never registered
+    conn.execute("DELETE FROM autorun_kinds WHERE kind IN ('browser_extension', 'browser_setting')")
+    conn.commit()
+    persistence.snapshot(conn, now=2000.0, reader=lambda: [known, startup, ext("a"), ext("b")])
+    assert [x["name"] for x in persistence.assess(conn, 0)["new_or_changed"]] == ["evil.lnk"]     # extensions: baseline, not news
+    persistence.snapshot(conn, now=3000.0, reader=lambda: [known, startup, ext("a"), ext("b"), ext("c")])
+    assert {x["name"] for x in persistence.assess(conn, 0)["new_or_changed"]} == {"evil.lnk", "Edge/Default/c"}   # a later one is news
+
+
+def test_older_entries_are_listed_as_suspicious_only_when_high():
+    root, conn = _conn()
+    persistence.snapshot(conn, now=1000.0, reader=lambda: [
+        {"kind": "browser_extension", "name": "Edge/Default/x", "command": "X [added by another program (registry)]", "detail": "location=3"},
+        {"kind": "browser_setting", "name": "Opera GX/Default/developer_mode", "command": "on", "detail": ""},
+        {"kind": "browser_extension", "name": "Edge/Default/bad", "command": "Bad [loaded unpacked (developer mode)]", "detail": "location=4"}])
+    listed = [x["name"] for x in persistence.assess(conn, 0)["already_present_but_suspicious"]]
+    assert listed == ["Edge/Default/bad"]
+
+
 def test_the_tool_reports_accepts_and_counts_only_open_high_entries():
     root, _ = _conn()
     path = root / "t.db"

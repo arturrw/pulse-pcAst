@@ -62,6 +62,38 @@ def read_raw(hours: float) -> dict:
 _ISO = re.compile(r"^(\d{4}-\d\d-\d\d)[T ](\d\d:\d\d:\d\d)(?:\.(\d+))?")
 
 
+POLICY_KEY = r"SOFTWARE\Policies\Microsoft\Windows Defender"
+POLICY_SUBKEYS = ("", r"\Real-Time Protection")
+# Group Policy values that switch a part of Defender off when they are 1. "Defender disabler" tools write exactly these.
+POLICY_OFF = ("DisableAntiSpyware", "DisableAntiVirus", "DisableRealtimeMonitoring", "DisableBehaviorMonitoring",
+              "DisableOnAccessProtection", "DisableIOAVProtection", "DisableScriptScanning", "DisableIntrusionPreventionSystem",
+              "DisableRawWriteNotification")
+
+
+def read_defender_policy() -> dict[str, int]:
+    """The policy values above that exist in the registry, as {name: value}. Read-only; {} when there is none (or not Windows)."""
+    try:
+        import winreg
+    except ImportError:
+        return {}
+    out: dict[str, int] = {}
+    for sub in POLICY_SUBKEYS:
+        try:
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, POLICY_KEY + sub) as key:
+                i = 0
+                while True:
+                    try:
+                        name, value, _ = winreg.EnumValue(key, i)
+                    except OSError:
+                        break
+                    if name in POLICY_OFF and isinstance(value, int):
+                        out[name] = value
+                    i += 1
+        except OSError:
+            continue
+    return out
+
+
 def _time(s: str | None) -> datetime | None:
     """Local wall-clock time from PowerShell's round-trip format ('2026-09-20T13:13:29.1234567+03:00'). Parsed by hand:
     Python 3.10's fromisoformat rejects 7 fractional digits and a colon in the offset, and would drop every event."""
@@ -144,6 +176,12 @@ def analyze(raw: dict, now: datetime | None = None) -> dict:
             add("defender-realtime-off", "high", "Defender real-time protection is OFF", "files are not scanned as they are opened or run")
         if sig and (now - sig).days >= SIGNATURE_MAX_AGE_DAYS:
             add("defender-signatures-old", "medium", "Defender signatures are old", f"last updated {sig:%Y-%m-%d}")
+    off_policy = sorted(k for k, v in (raw.get("defender_policy") or {}).items() if v == 1)
+    defender["policy_values_forcing_off"] = off_policy
+    if off_policy:
+        add("defender-policy-off", "high", "Group Policy switches Defender protection off",
+            f"{len(off_policy)} registry policy value(s) are set to 1: {', '.join(off_policy)}. Tools that disable Defender "
+            "write these; they stay until removed, and Defender may keep detecting the change.")
     events = _list(raw.get("defender_events"))
     off = stamp([r for r in events if r.get("id") == 5001])
     if off:
@@ -168,8 +206,11 @@ def analyze(raw: dict, now: datetime | None = None) -> dict:
             "summary": (f"{len(findings)} finding(s) ({high} high)" if findings else "nothing wrong in the Windows logs")}
 
 
-def health(hours: float = 168, reader=read_raw, now: datetime | None = None) -> dict:
-    out = analyze(reader(hours), now)
+def health(hours: float = 168, reader=read_raw, now: datetime | None = None, policy_reader=read_defender_policy) -> dict:
+    raw = reader(hours)
+    if raw:   # an empty result means PowerShell did not run: it stays "unavailable", it must not turn into "healthy"
+        raw = {**raw, "defender_policy": policy_reader()}
+    out = analyze(raw, now)
     if out.get("available"):
         out["hours"] = hours
     return out

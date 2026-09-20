@@ -59,9 +59,18 @@ def read_raw(hours: float) -> dict:
         return {}
 
 
+_ISO = re.compile(r"^(\d{4}-\d\d-\d\d)[T ](\d\d:\d\d:\d\d)(?:\.(\d+))?")
+
+
 def _time(s: str | None) -> datetime | None:
+    """Local wall-clock time from PowerShell's round-trip format ('2026-09-20T13:13:29.1234567+03:00'). Parsed by hand:
+    Python 3.10's fromisoformat rejects 7 fractional digits and a colon in the offset, and would drop every event."""
+    m = _ISO.match(s or "")
+    if not m:
+        return None
+    frac = (m.group(3) or "0")[:6].ljust(6, "0")
     try:
-        return datetime.fromisoformat(s).replace(tzinfo=None) if s else None
+        return datetime.strptime(f"{m.group(1)} {m.group(2)}.{frac}", "%Y-%m-%d %H:%M:%S.%f")
     except ValueError:
         return None
 

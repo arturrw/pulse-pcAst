@@ -24,6 +24,18 @@ def _raw(**parts) -> dict:
     return base
 
 
+def test_powershell_timestamps_parse_on_every_python_version():
+    # 7 fractional digits and a colon in the offset are what PowerShell's 'o' format gives; Python 3.10 cannot read them
+    # with fromisoformat, and every event would have been dropped silently
+    t = winhealth._time
+    assert t("2026-09-20T13:13:29.1234567+03:00") == datetime(2026, 9, 20, 13, 13, 29, 123456)
+    assert t("2026-09-20T13:13:29.5+03:00") == datetime(2026, 9, 20, 13, 13, 29, 500000)
+    assert t("2026-09-20T13:13:29+03:00") == datetime(2026, 9, 20, 13, 13, 29)
+    assert t("2026-09-20 13:13:29") == datetime(2026, 9, 20, 13, 13, 29)
+    for bad in (None, "", "yesterday", "2026-13-40T99:99:99"):
+        assert t(bad) is None, bad
+
+
 def test_a_healthy_machine_has_no_findings():
     r = winhealth.analyze(_raw(), NOW)
     assert r["available"] and r["findings"] == [] and r["summary"] == "nothing wrong in the Windows logs"

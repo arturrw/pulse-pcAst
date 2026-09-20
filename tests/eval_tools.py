@@ -76,9 +76,7 @@ def history_answer(answer, results):
 
 def spike_answer(answer, results):
     """'Was there a spike?' must be answered with max AND avg/when, not a bare max called a jump."""
-    r = first(results, "metrics_history") or first(results, "anomalies").get("range", {})   # either tool carries the numbers
-    if not r:
-        return "no metrics_history or anomalies range in the results"
+    r = first(results, "metrics_history")
     if "error" in r:
         return history_answer(answer, results)
     for key in ("max", "avg", "max_was_minutes_ago"):
@@ -171,14 +169,15 @@ def covers_stated(answer: str, minutes: float) -> bool:
 
 
 def anomalies_answer(answer, results):
-    r = first(results, "anomalies")
-    if "error" in r:
+    r = first(results, "metrics_history")
+    if not r or "error" in r or "unusual_periods_found" not in r:
         return None
-    if r["events_found"] == 0 and not re.search(r"не (?:было|найден|обнаружен|выявл|зафиксир|наблюда)|нет |ничего|не замет|отсутств|no unusual|none|nothing", answer, re.I):
-        return "no events found but the answer does not say that"
+    if r["unusual_periods_found"] == 0 and not re.search(
+            r"не (?:было|найден|обнаружен|выявл|зафиксир|наблюда)|нет |ничего|не замет|отсутств|no unusual|none|nothing|no anomal|not unusual|no spike|no events", answer, re.I):
+        return "no unusual periods found but the answer does not say that"
     if "warning" in r and not covers_stated(answer, r["data_covers_minutes"]):
         return f"short coverage ({r['data_covers_minutes']} min) not stated in answer"
-    for e in r["events"][:3]:
+    for e in r["unusual_periods"][:3]:
         if not num_in(answer, e["most_unusual_value"]):
             return f"event value {e['most_unusual_value']} not in answer"
     return None
@@ -204,16 +203,16 @@ CASES = [
      [game_report_answer], None),
     ("сравни записи combo_base_1 и combo_fsr3_1", {"game_sessions_compare"}, set(), [game_compare_answer], None),
     ("покажи FPS в последней игре", {"game_sessions"}, {"game_session_report"}, [game_none_answer], "EMPTY"),
-    ("было ли за последние сутки что-то странное с температурой видеокарты?", {"anomalies"}, set(),
+    ("было ли за последние сутки что-то странное с температурой видеокарты?", {"metrics_history"}, set(),
      [anomalies_answer], None),
-    ("были ли аномалии в использовании оперативной памяти за последние сутки?", {"anomalies"}, set(),
+    ("были ли аномалии в использовании оперативной памяти за последние сутки?", {"metrics_history"}, set(),
      [anomalies_answer], None),
     ("how much free space do I have on my disks?", {"disk_usage"}, set(), [free_space_answer, answer_in_english], None),
     ("was there a spike in GPU temperature in the last hour?", set(), set(),
      [spike_answer, answer_in_english], None),
     ("compare recordings combo_base_1 and combo_fsr3_1", {"game_sessions_compare"}, set(),
      [game_compare_answer, answer_in_english], None),
-    ("was there anything unusual with the GPU temperature in the last day?", {"anomalies"}, set(),
+    ("was there anything unusual with the GPU temperature in the last day?", {"metrics_history"}, set(),
      [anomalies_answer, answer_in_english], None),
     ("были ли аномалии в загрузке видеокарты за сутки?", set(), set(), [], None),   # load metric: any sane answer, no crash
 ]

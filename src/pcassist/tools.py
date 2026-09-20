@@ -84,15 +84,8 @@ def top_processes(sort_by: str = "cpu", minutes: int = 10, limit: int = 10) -> l
     return [_round({"name": n, "avg_cpu_percent": c, "max_rss_mb": m, "samples": k}) for n, c, m, k in rows]
 
 
-def metrics_history(metric: str, minutes: int = 60) -> dict:
-    """Summarize one metric over a recent time window from collected history (min, avg, max, latest).
-
-    Args:
-        metric: One of cpu_percent, ram_percent, ram_used_mb, swap_percent, disk_read_mbps,
-            disk_write_mbps, net_sent_kbps, net_recv_kbps, gpu_util_percent, gpu_mem_used_mb,
-            gpu_temp_c, gpu_power_w.
-        minutes: How many minutes of history to look at.
-    """
+def _history(metric: str, minutes: int) -> dict:
+    """min / avg / max / latest of one metric over a window, plus how much of the window the data really covers."""
     if metric not in METRICS:
         return {"error": f"unknown metric '{metric}'", "available": sorted(METRICS)}
     table, col = METRICS[metric]
@@ -125,6 +118,32 @@ def metrics_history(metric: str, minutes: int = 60) -> dict:
         result["warning"] = (f"collected data covers only ~{covers:.0f} min of the requested {int(minutes)} min; "
                              "tell the user the summary is for that shorter period only")
     return _round(result)
+
+
+def metrics_history(metric: str, minutes: int = 60) -> dict:
+    """Summarize one metric over a recent time window from collected history: min, avg, max (and when the max
+    happened), latest, the change over the last 10 minutes. Use it for any question about how a metric looked or
+    changed: "was there a spike", "how hot did the GPU get", "was anything unusual / strange / an anomaly".
+    For gpu_temp_c, ram_percent, ram_used_mb and swap_percent the result also lists `unusual_periods`: stretches
+    where the value stayed far outside its recent normal (a statistical check, not a fault diagnosis), each marked
+    `during_game` when a game recording overlaps. Load metrics (CPU, GPU usage, disk, network) are not checked
+    for unusual periods: they swing with whatever the user runs.
+
+    Args:
+        metric: One of cpu_percent, ram_percent, ram_used_mb, swap_percent, disk_read_mbps,
+            disk_write_mbps, net_sent_kbps, net_recv_kbps, gpu_util_percent, gpu_mem_used_mb,
+            gpu_temp_c, gpu_power_w.
+        minutes: How many minutes of history to look at.
+    """
+    result = _history(metric, minutes)
+    if "error" in result or metric not in anomaly.STATE_METRICS:
+        return result
+    found = anomalies(metric, minutes)
+    if "error" not in found:
+        result["unusual_periods_found"] = found["events_found"]
+        result["unusual_periods"] = found["events"]
+        result["unusual_periods_check"] = found["how_it_works"]
+    return result
 
 
 MIN_FORECAST_HOURS = 24  # below this a linear trend is mostly noise (temp files, caches)
@@ -316,7 +335,7 @@ ANOMALY_THRESHOLD = 8.0   # robust z-score
 
 
 def anomalies(metric: str, minutes: int = 1440) -> dict:
-    """Find unusual periods of a machine-STATE metric in collected history: values far outside what was normal
+    """(Not a model tool: metrics_history calls it for state metrics.) Find unusual periods of a machine-STATE metric in collected history: values far outside what was normal
     over the preceding hours (a robust statistical check, not a fault diagnosis). Only state metrics are supported
     (gpu_temp_c, ram_percent, ram_used_mb, swap_percent): load metrics such as GPU usage, disk or network
     activity swing whenever the user starts a game, so their outliers are ordinary workload. An event that
@@ -368,9 +387,6 @@ def anomalies(metric: str, minutes: int = 1440) -> dict:
            "how_it_works": f"a value counts when it stays far outside the median of the previous ~{ANOMALY_WINDOW * step / 3600:.1f} h "
                            f"for at least {ANOMALY_MIN_RUN * step / 60:.0f} min; the first ~{ANOMALY_WINDOW // 4 * step / 60:.0f} min "
                            "after the collector (re)starts are not checked"}
-    hist = metrics_history(metric, minutes)   # min/avg/max in the same window, so a "spike?" question is answerable from here too
-    if "error" not in hist:
-        out["range"] = {k: hist[k] for k in ("min", "avg", "max", "max_was_minutes_ago", "latest")}
     out["summary"] = (f"{len(found)} unusual period(s) of {metric} in the last {int(minutes)} min"
                       + (f"; the collected data covers only ~{recorded:.0f} min of that" if recorded < int(minutes) * 0.5 else ""))
     if recorded < int(minutes) * 0.5:
@@ -388,5 +404,5 @@ def _round_deep(x):
 
 
 TOOLS = [current_status, disk_usage, top_processes, metrics_history, disk_forecast, largest_folders,
-         game_sessions, game_session_report, game_sessions_compare, anomalies]
+         game_sessions, game_session_report, game_sessions_compare]
 TOOL_MAP = {f.__name__: f for f in TOOLS}

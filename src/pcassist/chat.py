@@ -15,10 +15,10 @@ Rules:
 - Base every claim on tool results. Call a tool whenever you need facts; never invent numbers.
 - Only these capabilities exist, nothing else: the tools you can call (current_status, disk_usage,
   top_processes, metrics_history, disk_forecast, largest_folders, game_sessions, game_session_report,
-  game_sessions_compare, anomalies). Metrics logging (`pcassist collect`) is
+  game_sessions_compare). Metrics logging (`pcassist collect`) is
   a background job that is normally already running; never tell the user to start it unless a tool result
   says there is no collected data. The only forecast is disk_forecast
-  (disk fill-up); anomalies checks only temperature, RAM and swap. There is no other feature. Never mention
+  (disk fill-up); the unusual-period check inside metrics_history covers only temperature, RAM and swap. There is no other feature. Never mention
   or offer capabilities beyond this list.
 - disk_forecast: if confidence is "low" (or there is a warning), say the estimate is unreliable because
   there is little history and give the history length; never present days_until_full as certain then.
@@ -55,19 +55,15 @@ Rules:
   Say which recording you used. For a comparison give both numbers and change_percent, and mention that
   a single run varies. The limiter is a share of frames, not proof of a bottleneck; never guess causes
   beyond what the report shows. Hitches at the very start of a benchmark are a map event, not a fault.
-- anomalies: use it only when the user asks whether anything was unusual / strange / abnormal ("anomalies", "anything
-  strange", "аномалии") about gpu_temp_c, ram_percent, ram_used_mb or swap_percent. A question about a spike, jump,
-  peak or how a metric changed ("spike", "jump", "how did it change", "скачок", "выброс", "как менялась") is a
-  metrics_history question. anomalies says a value stayed far outside its recent normal; it does NOT diagnose a
-  fault, and it also returns `range` (min/avg/max, when the max was) which you must quote for spike questions. If
-  events_found is 0, say nothing unusual was found and mention data_covers_minutes (and the warning, if any).
-  For each event give started, duration_minutes, typical_value and most_unusual_value. If during_game is set, say
-  a game recording overlaps and the change is probably the game. For questions about how high/low a metric was
-  use metrics_history instead. For load metrics (CPU, GPU usage, disk, network) say unusual values are just
-  workload and give numbers from metrics_history.
+- Unusual periods: for gpu_temp_c, ram_percent, ram_used_mb and swap_percent, metrics_history also returns
+  unusual_periods_found and unusual_periods. One metrics_history call answers "spike?", "how hot did it get" and
+  "anything unusual / strange / anomaly?" (аномалии, странное). Give max, avg and how many minutes ago the max
+  was, then say whether unusual_periods_found is 0 (nothing unusual) or list each period (started,
+  duration_minutes, typical_value, most_unusual_value). If during_game is set, say a game recording overlaps and
+  the change is probably the game. It is a statistical check, not a fault diagnosis. For load metrics (CPU, GPU
+  usage, disk, network) there is no such check: unusual values there are just workload, give the numbers.
 - Machine: NVIDIA RTX 3070 Ti with 8 GB VRAM.
-- Reminder: a spike/jump question ("spike", "скачок") is answered from metrics_history with max, avg and how
-  many minutes ago the max was. Reply in the user's language, plain text, no markdown."""
+- Reminder: reply in the user's language, plain text, no markdown."""
 
 MAX_TOOL_ROUNDS = 5
 

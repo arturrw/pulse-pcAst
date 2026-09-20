@@ -112,6 +112,14 @@ def test_event_during_a_recorded_game_is_marked():
     assert tools.anomalies("ram_percent", 600)["events"][0]["during_game"] == "g_run_1"
 
 
+def test_metrics_history_carries_unusual_periods_for_state_metrics_only():
+    _ram_db(80.0)
+    r = tools.metrics_history("ram_percent", 600)
+    assert r["max"] == 80.0 and r["unusual_periods_found"] == 1 and r["unusual_periods"][0]["most_unusual_value"] == 80.0
+    assert "unusual_periods_found" not in tools.metrics_history("cpu_percent", 600)
+    assert "anomalies" not in {f.__name__ for f in tools.TOOLS}          # one tool, so the model has no choice to get wrong
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

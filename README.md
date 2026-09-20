@@ -8,7 +8,7 @@ changes or deletes anything.
 - [x] Stage 1: metrics collector -> SQLite
 - [x] Stage 2: LLM tools + chat via Ollama (`qwen3:8b`)
 - [x] Stage 3a: disk-fill forecast (`disk_forecast`, needs 24+ h of history to be reliable)
-- [x] Stage 3b: anomaly detection for state metrics (`anomalies`, statistical, see below)
+- [x] Stage 3b: anomaly detection for state metrics (inside `metrics_history`, statistical, see below)
 - [ ] Stage 4: dashboard / reports
 
 ## Requirements
@@ -122,13 +122,12 @@ The model answers only by calling these read-only tools:
 | `current_status` | live CPU/RAM/disk I/O/network/GPU and top processes |
 | `disk_usage` | free/used space per disk |
 | `top_processes` | heaviest processes over a recent window (from history) |
-| `metrics_history` | min/avg/max/latest, when the max happened and the change over the last 10 min (from history) |
+| `metrics_history` | min/avg/max/latest, when the max happened and the change over the last 10 min (from history); for GPU temperature, RAM and swap also the unusual periods (see below) |
 | `disk_forecast` | growth in GB/day and days until each disk is full (linear trend; flagged unreliable under 24 h of history) |
 | `largest_folders` | what takes the most space in a directory (scan up to ~45 s) |
 | `game_sessions` | recorded game sessions and benchmark runs (PresentMon CSV in `data/sessions`, `data/bench`) |
 | `game_session_report` | FPS, 1% / 0.1% lows, limiter, slowest 10 s stretches and hitches of one recording |
 | `game_sessions_compare` | avg FPS / lows / p99 of two recordings side by side |
-| `anomalies` | unusual periods of a state metric (GPU temperature, RAM, swap) against its recent normal; marks periods that overlap a recorded game |
 
 ## Anomaly detection
 `src/pcassist/anomaly.py`: a value counts as unusual when it stays far outside the median of the previous
@@ -153,12 +152,14 @@ RTX 3070 Ti with 8 GB VRAM and 32 GB RAM:
 
 | model | eval | time per question | memory |
 |---|---|---|---|
-| `qwen3:8b` (default) | 57/63 (90%) | ~5 s | fits in VRAM (6 GB) |
-| `gpt-oss:20b` (`--model gpt-oss:20b`) | 20/21 (95%) | ~18 s | 14 GB, 57% of it runs on the CPU |
+| `qwen3:8b` (default) | 59/63 (94%) | ~5 s | fits in VRAM (6 GB) |
+| `gpt-oss:20b` (`--model gpt-oss:20b`) | 19/21 (90%) | ~18 s | 14 GB, 57% of it runs on the CPU |
 
 The difference is within the noise of these small samples, so the default stays the fast model; `gpt-oss:20b` is
-worth trying when answers must be as precise as possible and speed does not matter. Both fail the same way: a
-"was there a spike" question is sometimes routed to `anomalies` and the average is left out of the answer.
+worth trying when answers must be as precise as possible and speed does not matter. The remaining
+misses are noise: the average is sometimes left out of a "was there a spike" answer, and `gpt-oss:20b` occasionally
+lets Russian words into an English answer. The unusual-period check used to be a separate `anomalies` tool; models
+picked it for spike questions about half the time, so it now lives inside `metrics_history` (one tool, no wrong choice).
 The model copies examples from the system prompt, so keep the examples in it language-neutral (a Russian example
 made English questions get Russian answers, an English one the opposite).
 
@@ -170,6 +171,6 @@ python tests\eval_tools.py --runs 2   # add --slow to include the folder scan ca
 python tests\test_forecast.py        # unit tests for disk_forecast, no Ollama needed
 python tests\test_prune.py           # unit tests for history cleanup
 python tests\test_game_tools.py      # unit tests for the game_* chat tools
-python tests\test_anomaly.py         # detector and the anomalies tool, no Ollama needed
+python tests\test_anomaly.py         # detector and the unusual-period check, no Ollama needed
 python tests\test_collect_loop.py   # collector survives bad samples
 ```

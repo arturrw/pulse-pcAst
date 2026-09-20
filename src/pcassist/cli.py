@@ -147,6 +147,22 @@ def cmd_alerts(args: argparse.Namespace) -> None:
         print(f"  [{a.severity}] {a.title}: {a.body}")
 
 
+def cmd_ack(args: argparse.Namespace) -> None:
+    from . import ack
+
+    if args.forget:
+        print("No longer accepted." if ack.forget(args.db, args.forget) else f"'{args.forget}' was not in the list.")
+    elif args.finding:
+        e = ack.acknowledge(args.db, args.finding, args.note or "")
+        print(f"Accepted '{args.finding}' since {e['since']}. It stays in the report, marked accepted; it no longer alerts.")
+    else:
+        acked = ack.load(args.db)
+        if not acked:
+            print("No accepted risks. Accept one with: pcassist ack <finding id> --note \"why\"")
+        for k, v in sorted(acked.items()):
+            print(f"{k}  (since {v.get('since', '?')})  {v.get('note', '')}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pcassist")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -212,6 +228,13 @@ def main(argv: list[str] | None = None) -> int:
     al.add_argument("--test", action="store_true", help="show a test notification and exit")
     al.add_argument("--db", default=str(db.DEFAULT_DB))
     al.set_defaults(func=cmd_alerts)
+
+    ak = sub.add_parser("ack", help="accept a finding you know about (it stops alerting, stays in the report) or list them")
+    ak.add_argument("finding", nargs="?", help="finding id, e.g. defender-realtime-off; an id ending in * matches a prefix")
+    ak.add_argument("--note", help="why you accept it")
+    ak.add_argument("--forget", metavar="ID", help="stop accepting this finding")
+    ak.add_argument("--db", default=str(db.DEFAULT_DB))
+    ak.set_defaults(func=cmd_ack)
 
     args = parser.parse_args(argv)
     args.func(args)

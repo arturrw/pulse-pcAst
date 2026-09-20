@@ -60,6 +60,17 @@ CREATE TABLE IF NOT EXISTS process_connections (
     PRIMARY KEY (name, kind, addr, port)
 );
 
+-- what starts by itself (Run keys, startup folders, scheduled tasks, services); the first snapshot is the baseline
+CREATE TABLE IF NOT EXISTS autoruns (
+    kind TEXT,
+    name TEXT,
+    command TEXT,
+    detail TEXT,
+    first_seen REAL,
+    last_seen REAL,
+    PRIMARY KEY (kind, name, command)
+);
+
 CREATE TABLE IF NOT EXISTS binaries (
     exe TEXT PRIMARY KEY,
     mtime REAL,
@@ -107,6 +118,8 @@ def prune(conn: sqlite3.Connection, keep_days: float, now: float | None = None) 
     removed += conn.execute("DELETE FROM process_exes WHERE last_seen < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM process_connections WHERE last_seen < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM binaries WHERE checked_ts < ?", (cutoff,)).rowcount
+    # autoruns keep their baseline (first_seen), so only entries that disappeared long ago are dropped
+    removed += conn.execute("DELETE FROM autoruns WHERE last_seen < ?", (cutoff,)).rowcount
     conn.commit()
     return removed
 

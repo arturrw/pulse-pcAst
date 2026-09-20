@@ -1,10 +1,11 @@
 """Read-only tools the LLM can call. Docstrings double as the tool descriptions."""
 import time
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import psutil
 
-from . import anomaly, binaries, db, netwatch, procwatch, scan
+from . import ack, anomaly, binaries, db, netwatch, persistence, procwatch, scan, timeline, winhealth
 from .collectors import Collector, collect_disks
 
 _db_path = db.DEFAULT_DB
@@ -461,6 +462,80 @@ def process_watch(minutes: int = 1440) -> dict:
     return _round_deep(r)
 
 
+def system_health(hours: int = 168) -> dict:
+    """How the machine itself has been doing, from the Windows event logs and Windows Defender: blue screens, unexpected
+    shutdowns, hardware and disk errors, graphics-driver resets, apps that keep crashing, and Defender's state
+    (real-time protection on or off, old signatures, threats it detected). Use it for "why did my PC crash / freeze",
+    "is my antivirus on", "did Defender find anything". Findings the user has accepted are marked `accepted` and are
+    not counted as problems. The Security log (failed logins) needs administrator rights and is not read.
+
+    Args:
+        hours: How many hours back to look (default a week).
+    """
+    r = winhealth.health(int(hours), reader=winhealth.read_raw)
+    if r.get("available"):
+        ack.mark(_db_path, r["findings"])
+        open_ = [f for f in r["findings"] if not f["accepted"]]
+        r["findings_high"] = sum(f["severity"] == "high" for f in open_)
+        r["accepted_count"] = len(r["findings"]) - len(open_)
+        r["summary"] = (f"{len(open_)} open finding(s) ({r['findings_high']} high)"
+                        + (f", {r['accepted_count']} accepted by the user" if r["accepted_count"] else "")
+                        if r["findings"] else "nothing wrong in the Windows logs")
+    return _round_deep(r)
+
+
+def startup_changes(hours: int = 168) -> dict:
+    """What starts by itself on this PC (Run keys, startup folders, scheduled tasks, services) and what changed:
+    entries that are new since the first snapshot, and old ones that already look bad (a hidden script host, an
+    encoded PowerShell command, a download-and-run trick, a program started from Temp or Downloads, a broken
+    signature). A new autostart entry is one of the strongest signs of malware, but installers add entries too:
+    report what stands out and never call an entry malicious or safe. Entries the user accepted are marked.
+
+    Args:
+        hours: How far back to look for new entries (default a week).
+    """
+    now = time.time()
+    with db.connect(_db_path) as conn:
+        last = persistence.last_snapshot(conn)
+        if last is None or now - last > persistence.STALE_SECONDS:
+            persistence.snapshot(conn, reader=persistence.read_items)
+        r = persistence.assess(conn, now - int(hours) * 3600, checker=binaries.check_signatures)
+    if r.get("available"):
+        for key in ("new_or_changed", "already_present_but_suspicious"):
+            ack.mark(_db_path, r[key])
+        r["high"] = sum(x["severity"] == "high" and not x["accepted"] for x in r["new_or_changed"])
+        r["already_present_open"] = sum(not x["accepted"] for x in r["already_present_but_suspicious"])
+        r["summary"] = (f"{r['new_or_changed_count']} new or changed entr(ies) since {r['baseline_at']} ({r['high']} high), "
+                        f"{r['already_present_open']} older entr(ies) that look suspicious")
+    return _round_deep(r)
+
+
+def what_happened(when: str = "now", minutes: int = 30) -> dict:
+    """Everything the assistant knows about one moment, on a single timeline: metric changes, the heaviest and the
+    newly appeared processes, new network destinations, new autostart entries, alerts that were sent, game recordings,
+    gaps when the PC or the collector was off, and Windows events (crashes, shutdowns, Defender). Use it for "what
+    happened at 14:03", "why did it freeze around 9 pm", "what was going on yesterday evening". It lines things up in
+    time and does not say what caused what.
+
+    Args:
+        when: The moment: "14:03", "yesterday 21:30", "2026-09-20 14:03" or "45 minutes ago". Default now.
+        minutes: Look this many minutes before and after the moment (default 30, at most 240).
+    """
+    from . import alerts   # imported here: alerts itself imports this module
+
+    now = datetime.now()
+    center = timeline.parse_when(when, now)
+    if center is None:
+        return {"error": f"could not understand the time '{when}'; use 14:03, yesterday 21:30, 2026-09-20 14:03 or '45 minutes ago'"}
+    lo_dt = center - timedelta(minutes=max(1, min(int(minutes), timeline.MAX_HALF_WINDOW_MIN)))
+    raw = winhealth.read_raw(max(1, int((now - lo_dt).total_seconds() // 3600) + 1))
+    spans = [(sp[0], sp[1], name) for name, p in _recordings().items() if (sp := _recording_span(p))]
+    with db.connect(_db_path) as conn:
+        r = timeline.build(conn, center, int(minutes), now, alerts.recent_log(_db_path, 500), spans, raw)
+    r["moment"] = center.strftime("%Y-%m-%d %H:%M")
+    return _round_deep(r)
+
+
 def _round_deep(x):
     if isinstance(x, dict):
         return {k: _round_deep(v) for k, v in x.items()}
@@ -470,5 +545,5 @@ def _round_deep(x):
 
 
 TOOLS = [current_status, disk_usage, top_processes, metrics_history, disk_forecast, largest_folders,
-         game_sessions, game_session_report, game_sessions_compare, process_watch]
+         game_sessions, game_session_report, game_sessions_compare, process_watch, system_health, startup_changes, what_happened]
 TOOL_MAP = {f.__name__: f for f in TOOLS}

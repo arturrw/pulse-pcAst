@@ -74,7 +74,7 @@ route for a before/after comparison, and repeat each setting at least twice: sin
 
 ### CS2 settings A/B (unattended benchmark)
 
-`scriptsench_batch.ps1 -Repeats 2 -Tag x -Only base,shadowL,fsr3` runs the workshop FPS benchmark
+`scripts\bench_batch.ps1 -Repeats 2 -Tag x -Only base,shadowL,fsr3` runs the workshop FPS benchmark
 per variant with PresentMon and prints a table (`--slices` adds FPS per 10 s of the route). Results
 land in `data/bench/` (git-ignored). Findings on 1440p, all settings max as `base` (264 avg FPS,
 1% low 92, 0.1% low 61), 2 runs per variant, repeat spread is 0.1-5 FPS:
@@ -89,6 +89,7 @@ land in `data/bench/` (git-ignored). Findings on 1440p, all settings max as `bas
 | FSR 2 / 3 / 4 | +14% / +20% / +19% | +32% / +37% / +41% | +33% / +39% / +32% |
 | 1080p | +14% | +27% | +42% |
 | everything minimum, 1440p | +27% | +33% | +22% |
+| FSR 3 + shadows and shaders Low (separate batch, 3 runs, see below) | +31% | +65% | +70% |
 
 - The route is deterministic: the same places (20-40 s, 80-90 s) are slow in every run and every variant.
   There GPU time is about 2x and CPU busy time 3-6x the median, so lows come from heavy scenes, not random hitches.
@@ -98,6 +99,18 @@ land in `data/bench/` (git-ignored). Findings on 1440p, all settings max as `bas
   the FSR values 3 and 4 are within noise of each other. Which number is which FSR preset is unverified
   (0 = off, FPS grows with the value); check in the game menu.
 - Shadow and shader quality are worth about +10% together, AO and dynamic shadows are not worth touching.
+- Recommended combo, `-Only base,fsr3,fsr3ShadowShaderL -Repeats 3`, 1440p (repeat spread 0.8-1.4 FPS):
+
+  | variant | avg FPS | 1% low | 0.1% low |
+  |---|---|---|---|
+  | base | 265.4 | 92.6 | 60.3 |
+  | FSR 3 | 320.3 | 138.6 | 99.2 |
+  | FSR 3 + shadows and shaders Low | 347.2 | 152.9 | 102.3 |
+
+  Low shadows and shaders on top of FSR 3 add +8% avg and +10% 1% low; 0.1% low is within noise
+  (102 vs 99). The slow route stretches level out: 20-30 s goes 188 -> 249 -> 296 FPS (base -> FSR 3 -> combo),
+  80-90 s goes 214 -> 294 -> 324. Hitches are unchanged (1-2 frames at 0 s and 7 s). Alone, FSR 3 gave
+  a higher 1% low here (+50%) than in the 2-run table above (+37%), so treat the lows as +-10%.
 - Not measured: image quality (FSR softens the picture), CPU-limited scenes (this map is GPU-bound).
 
 ## Chat tools

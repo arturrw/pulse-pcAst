@@ -244,10 +244,9 @@ class App:
 
     # ---- setup
     def setup(self) -> dict:
-        self._forget_cache("jobs", "ollama")
-        return {"jobs": [{"name": t, "state": s, "what": setup_tasks.DESCRIPTIONS[t]}
-                         for t, s in setup_tasks.tasks_status(*self._runner_args()).items()],
-                "ollama": setup_tasks.ollama_status(self.model, self._client_factory),
+        jobs = self._cached("jobs", lambda: setup_tasks.tasks_status(*self._runner_args()), 20)
+        return {"jobs": [{"name": t, "state": s, "what": setup_tasks.DESCRIPTIONS[t]} for t, s in jobs.items()],
+                "ollama": self._cached("ollama", lambda: setup_tasks.ollama_status(self.model, self._client_factory), 20),
                 "data_folder": str(self.db_path.parent), "model": self.model,
                 "netstats_command": "pcassist netstats --seconds 60"}
 
@@ -418,6 +417,7 @@ class Handler(BaseHTTPRequestHandler):
 
 class Server(ThreadingHTTPServer):
     daemon_threads = True
+    allow_reuse_address = False      # on Windows this would let a second copy bind the same port and share it with the first
 
     def __init__(self, addr, app: App, token: str, idle_seconds: float = IDLE_SECONDS):
         super().__init__(addr, Handler)

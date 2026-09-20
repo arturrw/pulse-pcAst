@@ -195,6 +195,13 @@ def cmd_netstats(args: argparse.Namespace) -> None:
     netstats.save(conn, result, args.seconds)
 
 
+def cmd_ui(args: argparse.Namespace) -> None:
+    from . import webui
+
+    webui.serve(args.db, port=args.port, model=args.model, open_browser=not args.no_browser,
+                idle_seconds=args.idle, ready_json=args.json_ready)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="pcassist")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -266,6 +273,15 @@ def main(argv: list[str] | None = None) -> int:
     dg.add_argument("--no-report", action="store_true", help="do not refresh data/reports/latest.html")
     dg.add_argument("--db", default=str(db.DEFAULT_DB))
     dg.set_defaults(func=cmd_digest)
+
+    ui = sub.add_parser("ui", help="open the dashboard in your browser (a small server on 127.0.0.1 only)")
+    ui.add_argument("--port", type=int, default=8765)
+    ui.add_argument("--model", default="qwen3:8b")
+    ui.add_argument("--no-browser", action="store_true", help="do not open the browser, only print the address")
+    ui.add_argument("--idle", type=float, default=300, help="stop after this many seconds without the page open (0 = never)")
+    ui.add_argument("--json-ready", action="store_true", help="print one JSON line with the address for a desktop shell")
+    ui.add_argument("--db", default=str(db.DEFAULT_DB))
+    ui.set_defaults(func=cmd_ui)
 
     ns = sub.add_parser("netstats", help="who sends and receives how much (run in a terminal opened as administrator)")
     ns.add_argument("--seconds", type=int, default=60, help="how long to measure")

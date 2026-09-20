@@ -133,8 +133,13 @@ def _call_tool(name: str, args: dict) -> str:
         return json.dumps({"error": f"{type(e).__name__}: {e}"})
 
 
-def ask(client, model: str, messages: list, think: bool, num_ctx: int) -> str:
-    """Run one user turn (already appended to messages) to a final answer."""
+def _print_tool(name: str, args: dict) -> None:
+    print(f"  [tool] {name}({', '.join(f'{k}={v}' for k, v in args.items())})")
+
+
+def ask(client, model: str, messages: list, think: bool, num_ctx: int, on_tool=_print_tool) -> str:
+    """Run one user turn (already appended to messages) to a final answer. `on_tool(name, args)` is told about every
+    tool the model calls (the terminal prints it, the web app shows it next to the answer)."""
     for _ in range(MAX_TOOL_ROUNDS):
         resp = client.chat(model=model, messages=messages, tools=TOOLS, think=think,
                            options={"num_ctx": num_ctx})
@@ -144,7 +149,7 @@ def ask(client, model: str, messages: list, think: bool, num_ctx: int) -> str:
             return _strip_markdown(msg.content or "")
         for call in msg.tool_calls:
             name, args = call.function.name, dict(call.function.arguments)
-            print(f"  [tool] {name}({', '.join(f'{k}={v}' for k, v in args.items())})")
+            on_tool(name, args)
             messages.append({"role": "tool", "tool_name": name, "content": _call_tool(name, args)})
     return "(too many tool calls without an answer, try rephrasing)"
 

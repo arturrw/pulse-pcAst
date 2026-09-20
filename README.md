@@ -197,6 +197,19 @@ pcassist digest --dry-run                                    # print it, show an
 powershell -File scripts\autostart.ps1 install -Task digest  # every morning at 09:00 (runs later if the PC was off)
 ```
 
+## Desktop-style app (`pcassist ui`)
+
+```
+pcassist ui            # opens the dashboard in your browser
+```
+
+One window with tabs: overview (recording, Windows and Defender, autostart, processes, disks, report), Ask (the chat, with the
+tools it used), Findings (accept or forget), Timeline, Games, Setup (install or remove the three background jobs, Ollama status).
+It is a server on 127.0.0.1 only; every request needs a per-run secret token (HttpOnly SameSite=Strict cookie), the Host and
+Origin are checked, pages carry a strict content policy and are built with `textContent` only. Only a fixed list of actions exists.
+The server stops a few minutes after the tab is closed (`--idle 0` disables that). `--no-browser` and `--json-ready` are for
+embedding in a desktop shell.
+
 ## Report
 `pcassist report` writes one self-contained HTML file (inline SVG charts, no scripts, no network, light and dark
 theme): a summary (min / average / max), unusual periods, charts of GPU temperature, CPU, RAM and GPU load, disks

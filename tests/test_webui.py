@@ -1,0 +1,325 @@
+"""Unit tests for the local web app: the real server on an ephemeral port, driven over HTTP, with a fake model, a fake
+PowerShell runner and a fake notifier. Nothing here talks to Ollama, changes a scheduled task or shows a notification.
+Run: python tests/test_webui.py (or pytest)."""
+import json
+import re
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+from types import SimpleNamespace
+
+from pcassist import db, persistence, setup_tasks, webui, winhealth
+
+winhealth.read_raw = lambda hours: {}                 # never read this machine's event logs, registry or autostart
+winhealth.read_defender_policy = lambda: {}
+persistence.read_items = lambda: []
+
+
+class FakeClient:
+    def __init__(self, models=("qwen3:8b",), answer="You have 42 GB free."):
+        self.models, self.answer, self.seen = models, answer, []
+
+    def list(self):
+        return SimpleNamespace(models=[SimpleNamespace(model=m) for m in self.models])
+
+    def chat(self, model, messages, tools, think, options):
+        self.seen.append(len(messages))
+        return SimpleNamespace(message=SimpleNamespace(content=self.answer, tool_calls=None))
+
+
+def _db() -> Path:
+    path = Path(tempfile.mkdtemp()) / "metrics.db"
+    now = time.time()
+    with db.connect(path) as conn:
+        for i in range(200):
+            ts = now - 30 * (200 - i)
+            conn.execute("INSERT INTO system_metrics (ts, cpu_percent, ram_percent, ram_used_mb) VALUES (?,?,?,?)", (ts, 10.0, 40.0, 12000.0))
+            conn.execute("INSERT INTO gpu_metrics (ts, idx, util_percent, temp_c) VALUES (?,0,?,?)", (ts, 20.0, 55.0))
+        conn.execute("INSERT INTO disk_usage VALUES (?,?,?,?)", (now, "C:", 1000.0, 400.0))
+    return path
+
+
+class Runner:
+    """Stands in for PowerShell: the scheduled-task listing and our own install script."""
+
+    def __init__(self, state="Running"):
+        self.calls, self.state = [], state
+
+    def __call__(self, cmd, timeout=60):
+        self.calls.append(cmd)
+        if "-File" in cmd:
+            return 0, "Installed."
+        return 0, json.dumps([{"n": "pcassist-collect", "s": self.state}])
+
+
+class Running:
+    """A live server plus a tiny client that speaks HTTP the way a browser would."""
+
+    def __init__(self, client=None, runner=None, notify=None, idle=300.0):
+        self.path = _db()
+        self.client = client or FakeClient()
+        self.runner = runner or Runner()
+        self.notified = []
+        self.app = webui.App(self.path, client_factory=lambda: self.client, task_runner=self.runner,
+                             notify_fn=notify or (lambda t, b: self.notified.append((t, b)) or True))
+        self.server = webui.make_server(self.app, idle_seconds=idle)
+        self.port, self.token = self.server.server_address[1], self.server.token
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+
+    def request(self, method, path, body=None, cookie=True, host=None, origin="same", raw=None, headers=None):
+        h = {"Host": host or f"127.0.0.1:{self.port}"}
+        if cookie:
+            h["Cookie"] = f"pca={self.token}" if cookie is True else f"pca={cookie}"
+        if origin == "same":
+            origin = f"http://127.0.0.1:{self.port}" if method == "POST" else None
+        if origin:
+            h["Origin"] = origin
+        data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
+        if data is not None:
+            h["Content-Type"] = "application/json"
+        h.update(headers or {})
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}", data=data, method=method, headers=h)
+        opener = urllib.request.build_opener(_NoRedirect)
+        try:
+            with opener.open(req, timeout=20) as r:
+                return r.status, dict(r.headers), r.read()
+        except urllib.error.HTTPError as e:
+            return e.code, dict(e.headers), e.read()
+
+    def api(self, method, path, body=None, **kw):
+        code, hdr, data = self.request(method, "/api/" + path, body, **kw)
+        return code, json.loads(data or b"{}")
+
+    def stop(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k):
+        return None
+
+
+def test_the_page_needs_the_token_sets_a_strict_cookie_and_carries_a_matching_nonce():
+    s = Running()
+    try:
+        assert s.request("GET", "/", cookie=False)[0] == 403                                   # no token, no cookie
+        code, hdr, _ = s.request("GET", f"/?t=wrong", cookie=False)
+        assert code == 403
+        code, hdr, _ = s.request("GET", f"/?t={s.token}", cookie=False)
+        assert code == 302 and hdr["Location"] == "/"                                          # the token leaves the address bar
+        cookie = hdr["Set-Cookie"]
+        assert "HttpOnly" in cookie and "SameSite=Strict" in cookie and s.token in cookie
+        code, hdr, body = s.request("GET", "/")
+        text = body.decode()
+        assert code == 200 and "pcassist" in text
+        nonce = re.search(r"script-src 'nonce-([^']+)'", hdr["Content-Security-Policy"]).group(1)
+        assert f'<script nonce="{nonce}">' in text and f'<style nonce="{nonce}">' in text     # only our own script may run
+        assert "default-src 'none'" in hdr["Content-Security-Policy"] and "frame-ancestors 'none'" in hdr["Content-Security-Policy"]
+        assert hdr["X-Content-Type-Options"] == "nosniff" and hdr["Cache-Control"] == "no-store"
+        assert not re.search(r"(?:src|href)=['\"]?https?://", text)
+        assert re.search(r"innerHTML|eval\(|document\.write", text) is None                    # machine text never becomes markup
+        assert s.request("GET", "/", cookie="wrong")[0] == 403
+    finally:
+        s.stop()
+
+
+def test_a_foreign_host_or_origin_and_a_missing_cookie_are_refused():
+    s = Running()
+    try:
+        assert s.api("GET", "status", cookie=False)[0] == 401
+        assert s.api("GET", "status", cookie="not-the-token")[0] == 401
+        code, body = s.api("GET", "status", host="evil.example:80")                            # DNS rebinding
+        assert code == 403 and "host" in body["error"]
+        code, body = s.api("POST", "ping", {}, origin="http://evil.example")                   # another web page posting to us
+        assert code == 403 and "origin" in body["error"]
+        assert s.api("POST", "ping", {})[0] == 200
+        assert s.api("GET", "status", host=f"localhost:{s.port}")[0] == 200                    # localhost is fine too
+    finally:
+        s.stop()
+
+
+def test_bad_requests_get_clean_errors():
+    s = Running()
+    try:
+        assert s.api("POST", "ask", raw=b"not json")[0] == 400
+        assert s.api("POST", "ask", raw=b"[1, 2]")[0] == 400
+        assert s.api("POST", "ask", raw=b"x" * (webui.MAX_BODY + 1))[0] == 413
+        assert s.api("GET", "no-such-thing")[0] == 404
+        assert s.api("GET", "ask")[0] == 405 and s.api("POST", "status", {})[0] == 405         # right route, wrong method
+        assert s.request("GET", "/etc/passwd")[0] == 404
+    finally:
+        s.stop()
+
+
+def test_the_report_is_served_with_a_policy_that_blocks_scripts():
+    s = Running()
+    try:
+        code, hdr, body = s.request("GET", "/report?hours=6")
+        assert code == 200 and body.startswith(b"<!doctype html>")
+        assert "default-src 'none'" in hdr["Content-Security-Policy"] and "script-src" not in hdr["Content-Security-Policy"]
+        assert s.request("GET", "/report", cookie=False)[0] == 401
+    finally:
+        s.stop()
+
+
+def test_status_reports_the_collector_the_jobs_and_the_model():
+    s = Running(runner=Runner("Running"), client=FakeClient())
+    try:
+        code, st = s.api("GET", "status")
+        assert code == 200 and st["collector"]["recording"] is True and st["collector"]["hours_recorded_24h"] > 1
+        assert st["jobs"] == {"collect": "Running", "alerts": None, "digest": None}
+        assert st["ollama"]["running"] and st["ollama"]["model_ready"]
+        assert st["disk"]["name"] == "C:" and round(st["disk"]["free_gb"]) == 600
+        s2 = Running(client=FakeClient(models=("other:1b",)))
+        try:
+            assert "ollama pull qwen3:8b" in s2.api("GET", "status")[1]["ollama"]["hint"]
+        finally:
+            s2.stop()
+    finally:
+        s.stop()
+
+
+def test_accepting_and_forgetting_a_finding_persists_and_rejects_bad_ids():
+    s = Running()
+    try:
+        assert s.api("POST", "ack", {"id": "defender-realtime-off", "note": "on purpose"})[1]["ok"] is True
+        assert s.app.status()  # the cache is dropped, nothing breaks
+        assert json.loads((s.path.parent / "acknowledged.json").read_text())["defender-realtime-off"]["note"] == "on purpose"
+        assert "defender-realtime-off" in s.api("GET", "findings")[1]["accepted_list"]
+        assert s.api("POST", "forget", {"id": "defender-realtime-off"})[1]["ok"] is True
+        assert s.api("GET", "findings")[1]["accepted_list"] == {}
+        for bad in ("", "   ", None, 5, "x" * 400, "a" + chr(0) + "b"):
+            assert s.api("POST", "ack", {"id": bad})[0] == 400, repr(bad)
+    finally:
+        s.stop()
+
+
+def test_findings_come_from_the_windows_checks_and_mark_accepted_ones():
+    s = Running()
+    real = winhealth.read_raw
+    iso = time.strftime("%Y-%m-%dT%H:%M:%S.0+03:00")
+    winhealth.read_raw = lambda hours: {"defender": {"service": True, "antivirus": True, "realtime": False, "tamper_protected": True,
+                                                     "signatures": iso, "quick_scan": iso, "full_scan": None}}
+    try:
+        f = s.api("GET", "findings")[1]["findings"]
+        off = next(x for x in f if x["id"] == "defender-realtime-off")
+        assert off["source"] == "Windows and Defender" and off["severity"] == "high" and off["accepted"] is False
+        s.api("POST", "ack", {"id": "defender-realtime-off", "note": "mine"})
+        off = next(x for x in s.api("GET", "findings")[1]["findings"] if x["id"] == "defender-realtime-off")
+        assert off["accepted"] is True and off["accepted_note"] == "mine"
+    finally:
+        winhealth.read_raw = real
+        s.stop()
+
+
+def test_timeline_understands_a_time_and_refuses_junk():
+    s = Running()
+    try:
+        code, r = s.api("GET", "timeline?when=20%20minutes%20ago&minutes=15")
+        assert code == 200 and r["samples_in_window"] > 0 and "timeline" in r
+        code, r = s.api("GET", "timeline?when=blah&minutes=15")
+        assert code == 400 and "could not understand" in r["error"]
+        assert s.api("GET", "timeline?when=now&minutes=abc")[0] == 400
+    finally:
+        s.stop()
+
+
+def test_the_assistant_keeps_the_conversation_and_says_what_is_wrong_when_the_model_is_missing():
+    client = FakeClient(answer="You have 42 GB free.")
+    s = Running(client=client)
+    try:
+        code, r = s.api("POST", "ask", {"message": "how much space?"})
+        assert code == 200 and r["answer"] == "You have 42 GB free." and r["tools"] == []
+        s.api("POST", "ask", {"message": "and on D:?"})
+        assert client.seen == [2, 4]                                   # system + question, then the whole earlier exchange too
+        assert s.api("POST", "reset", {})[1]["ok"] is True
+        s.api("POST", "ask", {"message": "again"})
+        assert client.seen[-1] == 2                                    # a new chat starts from the system prompt
+        assert s.api("POST", "ask", {"message": "   "})[0] == 400
+        assert s.api("POST", "ask", {"message": 5})[0] == 400
+    finally:
+        s.stop()
+    down = Running(client=FakeClient(models=()))
+    try:
+        code, r = down.api("POST", "ask", {"message": "hi"})
+        assert code == 503 and "ollama pull" in r["error"]
+    finally:
+        down.stop()
+
+
+def test_only_the_three_known_jobs_and_two_actions_can_be_run_and_nothing_user_typed_reaches_the_command():
+    run = Runner()
+    s = Running(runner=run)
+    try:
+        code, r = s.api("POST", "job", {"task": "digest", "action": "install"})
+        assert code == 200 and r["ok"] is True
+        cmd = run.calls[-1]
+        assert cmd[:6] == ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "RemoteSigned", "-File"]
+        assert cmd[-3:] == ["install", "-Task", "digest"] and cmd[6].endswith("autostart.ps1")
+        n = len(run.calls)
+        for bad in ({"task": "digest; calc", "action": "install"}, {"task": "collect", "action": "format"}, {"task": "../x", "action": "remove"},
+                    {"task": None, "action": "install"}, {"task": ["digest"], "action": "install"}):
+            assert s.api("POST", "job", bad)[0] == 400, bad
+        assert len(run.calls) == n                                      # nothing was run for the refused ones
+        assert setup_tasks.change_task("x", "install", run) == (False, "unknown job or action")
+        jobs = {j["name"]: j["state"] for j in s.api("GET", "setup")[1]["jobs"]}
+        assert jobs == {"collect": "Running", "alerts": None, "digest": None}
+    finally:
+        s.stop()
+
+
+def test_test_notification_and_digest_now_use_the_notifier_and_report_what_they_did():
+    s = Running()
+    try:
+        assert s.api("POST", "notify", {})[1]["ok"] is True and s.notified[0][0] == "pcassist test"
+        d = s.api("POST", "digest", {})[1]
+        assert d["title"].startswith("Morning digest") and d["shown"] is True and s.notified[-1][0] == d["title"]
+        assert (s.path.parent / "digest.log").exists() and (s.path.parent / "reports" / "latest.html").exists()
+    finally:
+        s.stop()
+
+
+def test_quit_stops_the_server_and_a_page_that_went_away_does_too():
+    s = Running()
+    try:
+        assert s.api("POST", "quit", {})[1]["ok"] is True
+        s.thread.join(5)
+        assert not s.thread.is_alive()
+    finally:
+        s.server.server_close()
+    idle = Running(idle=0.4)
+    threading.Thread(target=idle.server.watch_idle, daemon=True).start()
+    try:
+        idle.api("POST", "ping", {})
+        idle.thread.join(5)                                             # no heartbeat any more: the server stops by itself
+        assert not idle.thread.is_alive()
+    finally:
+        idle.server.server_close()
+
+
+def test_the_page_script_is_valid_javascript():
+    import shutil
+    import subprocess
+
+    from pcassist import webui_page
+
+    node = shutil.which("node")
+    if not node:
+        return                                                           # no Node on this machine: the other checks still ran
+    js = re.search(r'<script nonce="N">(.*)</script>', webui_page.render_page("N"), re.S).group(1)
+    path = Path(tempfile.mkdtemp()) / "page.js"
+    path.write_text(js, encoding="utf-8")
+    res = subprocess.run([node, "--check", str(path)], capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr[:400]
+
+
+if __name__ == "__main__":
+    for name, fn in list(globals().items()):
+        if name.startswith("test_"):
+            fn()
+            print("ok", name)

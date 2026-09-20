@@ -96,8 +96,9 @@ land in `data/bench/` (git-ignored). Findings on 1440p, all settings max as `bas
 - Only 1-2 frames per run exceed 30 ms, at fixed route seconds (0 s, 7 s) whatever the settings: a
   scripted event of the map, not a settings problem.
 - Resolution is the main lever for lows. To keep 1440p output, FSR gets the same lows as 1080p;
-  the FSR values 3 and 4 are within noise of each other. Which number is which FSR preset is unverified
-  (0 = off, FPS grows with the value); check in the game menu.
+  the FSR values 3 and 4 are within noise of each other. Values of `videocfg_fsr_detail`: 0 = Disabled,
+  3 = Balanced (both confirmed against the game menu); by the menu order and FPS growth 1 = Ultra Quality,
+  2 = Quality, 4 = Performance (not confirmed directly).
 - Shadow and shader quality are worth about +10% together, AO and dynamic shadows are not worth touching.
 - Recommended combo, `-Only base,fsr3,fsr3ShadowShaderL -Repeats 3`, 1440p (repeat spread 0.8-1.4 FPS):
 

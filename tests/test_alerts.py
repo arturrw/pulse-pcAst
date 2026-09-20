@@ -60,6 +60,7 @@ def test_unusual_ram_period_is_reported_once_it_is_recent():
     _db(ram_tail=85.0)
     found = [a for a in alerts.collect_alerts() if a.key.startswith("unusual-ram_percent")]
     assert len(found) == 1 and "85" in found[0].body
+    assert not [a for a in alerts.collect_alerts() if "ram_used_mb" in a.key]      # one event, one alert (not also in MB)
 
 
 def test_cooldown_skips_repeats_and_lets_them_through_later():

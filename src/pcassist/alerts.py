@@ -82,9 +82,13 @@ def check_disks(now: float) -> list[Alert]:
     return out
 
 
+# ram_used_mb is the same event as ram_percent in other units: alerting on both would show two notifications for one thing
+ALERT_METRICS = tuple(m for m in anomaly.STATE_METRICS if m != "ram_used_mb")
+
+
 def check_unusual(now: float) -> list[Alert]:
     out = []
-    for metric in anomaly.STATE_METRICS:
+    for metric in ALERT_METRICS:
         r = tools.anomalies(metric, 120)
         for e in r.get("events", []):
             if e["during_game"] or e["minutes_ago"] > 90:

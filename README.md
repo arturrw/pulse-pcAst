@@ -9,7 +9,29 @@ changes or deletes anything.
 - [x] Stage 2: LLM tools + chat via Ollama (`qwen3:8b`)
 - [x] Stage 3a: disk-fill forecast (`disk_forecast`, needs 24+ h of history to be reliable)
 - [x] Stage 3b: anomaly detection for state metrics (inside `metrics_history`, statistical, see below)
-- [ ] Stage 4: dashboard / reports
+- [x] Stage 4: HTML report of the history (`pcassist report`); there is no live dashboard
+
+## Quick start
+1. Install Python 3.10+ and [Ollama](https://ollama.com), then `ollama pull qwen3:8b`.
+2. In the project folder:
+   ```powershell
+   python -m venv .venv
+   .venv\Scripts\Activate.ps1
+   pip install -e .
+   ```
+3. Start collecting metrics in the background (a hidden Task Scheduler job, no admin rights; it needs hours to
+   days of history before the answers get interesting):
+   ```powershell
+   powershell -File scripts\autostart.ps1 install
+   ```
+4. Ask about your PC: `pcassist chat`. For example "how much free space do I have?", "was there a spike in GPU
+   temperature in the last hour?", "what is using the most CPU?", "when will my disk fill up?" (a reliable answer
+   needs 24+ h of history). The model only calls read-only tools; it cannot change anything.
+5. See the history at a glance: `pcassist report --open` (charts, unusual periods, disks, heaviest processes).
+6. Optional, for games: record a session with PresentMon (see [Game sessions](#game-sessions-fps--frame-time-analysis))
+   and ask "show the FPS of my last recording" or "compare recordings A and B".
+
+Everything runs and stays on this machine: the database, recordings and reports live in `data/`, which is git-ignored.
 
 ## Requirements
 - Windows, Python 3.10+
@@ -31,6 +53,7 @@ pcassist scan C:\ --limit 10     # largest subfolders of a directory
 pcassist chat                    # chat with the local model (needs Ollama running)
 pcassist chat --think            # enable model reasoning (slower)
 pcassist chat --model <name>     # use another Ollama model
+pcassist report --hours 24 --open  # HTML report of the last 24 h (written to data/reports/latest.html)
 ```
 
 Metrics go to `data/metrics.db` (override with `--db`). Questions about history
@@ -49,6 +72,13 @@ powershell -File scripts\autostart.ps1 remove    # stop and unregister
 ```
 Data stays in `data/metrics.db` (roughly 5-10 MB/day, measured from the first samples at the default 30 s interval; history older than 90 days is deleted automatically, change with `collect --keep-days N`, 0 = keep all).
 Manual cleanup and file shrink: `pcassist prune --days 30`.
+
+## Report
+`pcassist report` writes one self-contained HTML file (inline SVG charts, no scripts, no network, light and dark
+theme): a summary (min / average / max), unusual periods, charts of GPU temperature, CPU, RAM and GPU load, disks
+with the fill-up forecast, the heaviest processes and the latest game recordings. It uses the same functions as the
+chat tools, so both always show the same numbers. Gaps where the PC was off are left blank instead of being joined
+by a line, and the report says how much of the period was actually recorded.
 
 ## Game sessions (FPS / frame time analysis)
 Analyzes one recorded game session: FPS, 1% / 0.1% lows, what limits the frame rate (GPU or CPU),
@@ -172,5 +202,6 @@ python tests\test_forecast.py        # unit tests for disk_forecast, no Ollama n
 python tests\test_prune.py           # unit tests for history cleanup
 python tests\test_game_tools.py      # unit tests for the game_* chat tools
 python tests\test_anomaly.py         # detector and the unusual-period check, no Ollama needed
+python tests\test_report.py          # HTML report (sections, escaping, gaps), no Ollama needed
 python tests\test_collect_loop.py   # collector survives bad samples
 ```

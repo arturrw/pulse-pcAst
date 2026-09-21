@@ -6,7 +6,7 @@ does not carry the per-response nonce. The text is English only."""
 
 PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Vigil</title>
+<title>Pulse</title>
 <style nonce="{{NONCE}}">
 :root{--bg:#f4f4f1;--card:#fff;--ink:#1c1c1a;--mute:#6b6b66;--line:#e2e2dc;--acc:#2f6fdb;--acc-ink:#fff;--ok:#2a7d46;--warn:#b25b00;--bad:#c23b32;--chip:#eceae4}
 @media (prefers-color-scheme:dark){:root{--bg:#141413;--card:#1e1e1c;--ink:#ecece8;--mute:#9a9a94;--line:#33332f;--acc:#6ea0ff;--acc-ink:#0d0d0c;--ok:#5fcf8b;--warn:#ffb15c;--bad:#ff8a80;--chip:#2a2a27}}
@@ -46,7 +46,7 @@ code{background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anyw
 .row.tight{margin:0}
 .verdict{font-size:22px;font-weight:700;margin:4px 0}.verdict.ok{color:var(--ok)}.verdict.warn{color:var(--warn)}.verdict.bad{color:var(--bad)}
 </style></head><body>
-<header><span class="dot" id="dot"></span><h1>Vigil</h1><button id="quit">Quit</button></header>
+<header><span class="dot" id="dot"></span><h1>Pulse</h1><button id="quit">Quit</button></header>
 <nav id="tabs"></nav><main id="view"></main>
 <script nonce="{{NONCE}}">
 "use strict";
@@ -271,7 +271,7 @@ async function setup(out) {
     h("section", {}, h("h2", {}, "Where your data is"), h("code", {}, s.data_folder)));
 }
 
-$("quit").addEventListener("click", async () => { try { await api("quit", {}); } catch (e) {} document.body.replaceChildren(h("p", { class: "mute", style: "padding:24px" }, "Vigil has stopped. You can close this window.")); });
+$("quit").addEventListener("click", async () => { try { await api("quit", {}); } catch (e) {} document.body.replaceChildren(h("p", { class: "mute", style: "padding:24px" }, "Pulse has stopped. You can close this window.")); });
 async function beat() { try { const st = await api("status"); $("dot").style.background = st.collector.recording ? "var(--ok)" : "var(--bad)"; } catch (e) {} }
 setInterval(() => { api("ping", {}).catch(() => {}); }, 15000); api("ping", {}).catch(() => {}); beat(); setInterval(beat, 60000);
 show();

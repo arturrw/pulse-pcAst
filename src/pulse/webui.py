@@ -1,4 +1,4 @@
-"""The local web app: `vigil ui` opens a dashboard in the browser with everything the command line can do.
+"""The local web app: `pulse ui` opens a dashboard in the browser with everything the command line can do.
 
 It is a small server on 127.0.0.1 only. Because a web page can be attacked from other web pages, every request is
 checked: the Host must be the local address (DNS-rebinding), a POST's Origin must be this app, and every call needs a
@@ -269,7 +269,7 @@ class App:
                 "ollama": self._cached("ollama", lambda: setup_tasks.ollama_status(self.model, self._client_factory), 20),
                 "settings": settings.load(self.db_path.parent), "choices": {k: list(v) for k, v in settings.CHOICES.items()},
                 "data_folder": str(self.db_path.parent), "model": self.model,
-                "netstats_command": "vigil netstats --seconds 60"}
+                "netstats_command": "pulse netstats --seconds 60"}
 
     def job(self, task, action, values=None) -> dict:
         if task not in setup_tasks.TASKS or action not in setup_tasks.ACTIONS:
@@ -306,7 +306,7 @@ class App:
         return {"ok": True, "settings": after}
 
     def test_notification(self) -> dict:
-        return {"ok": bool(self._notify("vigil test", "If you can read this, notifications reach you."))}
+        return {"ok": bool(self._notify("pulse test", "If you can read this, notifications reach you."))}
 
     def run_digest(self) -> dict:
         d = digest.run(self.db_path, notify_fn=self._notify, refresh_report=True)
@@ -317,7 +317,7 @@ class App:
 # ---------------------------------------------------------------- HTTP
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "vigil"
+    server_version = "pulse"
     protocol_version = "HTTP/1.1"
 
     def log_message(self, *args) -> None:   # quiet: the terminal is not a log
@@ -368,7 +368,7 @@ class Handler(BaseHTTPRequestHandler):
     def _authorized(self) -> bool:
         if self._cookie_ok():
             return True
-        self._json(401, {"error": "not authorized: open the address that `vigil ui` printed"})
+        self._json(401, {"error": "not authorized: open the address that `pulse ui` printed"})
         return False
 
     # -- routes
@@ -383,7 +383,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(302, b"", "text/plain", {"Location": "/", "Set-Cookie": f"pca={self.server.token}; HttpOnly; SameSite=Strict; Path=/"})
                 return
             if not self._cookie_ok():
-                self._send(403, b"Open the address that `vigil ui` printed in the terminal.", "text/plain; charset=utf-8")
+                self._send(403, b"Open the address that `pulse ui` printed in the terminal.", "text/plain; charset=utf-8")
                 return
             nonce = secrets.token_urlsafe(12)
             csp = (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self'; "
@@ -514,7 +514,7 @@ def serve(db_path, port: int = 8765, model: str = "qwen3:8b", open_browser: bool
     if ready_json:
         print(json.dumps({"url": url, "port": server.server_address[1], "token": server.token}), flush=True)
     else:
-        print(f"vigil is running at {url}\nClose the browser tab and it stops by itself (or press Ctrl+C).", flush=True)
+        print(f"pulse is running at {url}\nClose the browser tab and it stops by itself (or press Ctrl+C).", flush=True)
     threading.Thread(target=app.warm, daemon=True).start()
     if idle_seconds > 0:
         threading.Thread(target=server.watch_idle, daemon=True).start()

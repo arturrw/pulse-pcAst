@@ -3,7 +3,7 @@ import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from vigil import games
+from pulse import games
 
 BASE = datetime(2026, 9, 19, 14, 0, 0)  # local (Afterburner) time
 PM_SHIFT = timedelta(hours=3)           # PresentMon stamps 3 h ahead in these logs

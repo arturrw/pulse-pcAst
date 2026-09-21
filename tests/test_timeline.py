@@ -4,7 +4,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from vigil import db, timeline, tools, winhealth
+from pulse import db, timeline, tools, winhealth
 
 NOW = datetime(2026, 9, 20, 22, 30)
 

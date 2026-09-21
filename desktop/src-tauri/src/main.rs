@@ -1,4 +1,4 @@
-// Thin shell: starts the Python backend (`vigil ui --no-browser --idle 0 --json-ready`), reads the JSON ready line
+// Thin shell: starts the Python backend (`pulse ui --no-browser --idle 0 --json-ready`), reads the JSON ready line
 // it prints, shows the local page in a window, keeps a tray icon, and stops the backend on exit.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -39,14 +39,14 @@ fn bind_to_kill_job(child: &Child) {
 fn backend_exe(app: &AppHandle) -> Option<PathBuf> {
     let mut candidates = Vec::new();
     if let Ok(dir) = app.path().resource_dir() {
-        candidates.push(dir.join("backend").join("vigil.exe"));
+        candidates.push(dir.join("backend").join("pulse.exe"));
     }
-    candidates.push(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../build/dist/vigil/vigil.exe")));
+    candidates.push(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../build/dist/pulse/pulse.exe")));
     candidates.into_iter().find(|p| p.exists())
 }
 
 fn start_backend(app: &AppHandle) -> Result<(Child, String), String> {
-    let exe = backend_exe(app).ok_or("backend (vigil.exe) not found")?;
+    let exe = backend_exe(app).ok_or("backend (pulse.exe) not found")?;
     let mut child = Command::new(&exe)
         .args(["ui", "--no-browser", "--idle", "0", "--json-ready"])
         .stdout(Stdio::piped())
@@ -86,12 +86,12 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
 
-            let open = MenuItem::with_id(app, "open", "Open Vigil", true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", "Open Pulse", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &quit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Vigil")
+                .tooltip("Pulse")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
@@ -122,7 +122,7 @@ fn main() {
                 Err(e) => {
                     if let Some(w) = handle.get_webview_window("main") {
                         let msg = e.replace('\\', "/").replace('"', "'");
-                        let _ = w.eval(&format!("document.body.innerText = \"Vigil could not start: {msg}\""));
+                        let _ = w.eval(&format!("document.body.innerText = \"Pulse could not start: {msg}\""));
                     }
                 }
             });

@@ -3,7 +3,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from vigil import ack, binaries, db, persistence, tools
+from pulse import ack, binaries, db, persistence, tools
 
 BS = chr(92)
 binaries.RISKY_DIRS = (BS + "dl_risky" + BS,)   # the temp folders of these tests live under Temp, which the real list flags

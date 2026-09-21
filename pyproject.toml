@@ -1,5 +1,5 @@
 [project]
-name = "vigil"
+name = "pulse"
 version = "0.1.0"
 description = "Local AI assistant that analyzes the state of your own computer"
 readme = "README.md"
@@ -21,7 +21,7 @@ dependencies = [
 Repository = "https://github.com/arturrw/pc-ai-assistant"
 
 [project.scripts]
-vigil = "vigil.cli:main"
+pulse = "pulse.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]

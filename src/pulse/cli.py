@@ -137,7 +137,7 @@ def cmd_alerts(args: argparse.Namespace) -> None:
     from . import alerts
 
     if args.test:
-        ok = alerts.notify("Vigil test", "If you can read this, alerts can reach you.")
+        ok = alerts.notify("Pulse test", "If you can read this, alerts can reach you.")
         print("Notification shown." if ok else "The notification could not be shown (see README, Alerts).")
         return
     found = alerts.run_once(args.db, dry_run=args.dry_run)
@@ -158,7 +158,7 @@ def cmd_ack(args: argparse.Namespace) -> None:
     else:
         acked = ack.load(args.db)
         if not acked:
-            print("No accepted risks. Accept one with: vigil ack <finding id> --note \"why\"")
+            print("No accepted risks. Accept one with: pulse ack <finding id> --note \"why\"")
         for k, v in sorted(acked.items()):
             print(f"{k}  (since {v.get('since', '?')})  {v.get('note', '')}")
 
@@ -203,7 +203,7 @@ def cmd_ui(args: argparse.Namespace) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="vigil")
+    parser = argparse.ArgumentParser(prog="pulse")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     c = sub.add_parser("collect", help="collect metrics into SQLite")

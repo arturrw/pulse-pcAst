@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from test_games import _write_pm  # noqa: E402
 
-from vigil import tools  # noqa: E402
+from pulse import tools  # noqa: E402
 
 
 def _data_dir() -> Path:

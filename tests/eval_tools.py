@@ -13,7 +13,7 @@ import time
 
 import ollama
 
-from vigil import chat, tools
+from pulse import chat, tools
 
 
 def num_in(answer: str, value) -> bool:
@@ -64,7 +64,7 @@ def free_space_answer(answer, results):
 def history_answer(answer, results):
     r = first(results, "metrics_history")
     if "error" in r:
-        return None if "vigil collect" in answer else "no-data case: answer must mention `vigil collect`"
+        return None if "pulse collect" in answer else "no-data case: answer must mention `pulse collect`"
     for key in ("min", "max"):
         if not num_in(answer, r[key]):
             return f"{key}={r[key]} not in answer"
@@ -94,7 +94,7 @@ HEDGE = re.compile(r"недостаточно|мало данных|ненадё
 def forecast_answer(answer, results):
     rows = first_list(results, "disk_forecast")
     if any("error" in r for r in rows):
-        return None if "vigil collect" in answer else "no-data case: answer must mention `vigil collect`"
+        return None if "pulse collect" in answer else "no-data case: answer must mention `pulse collect`"
     if any(r["confidence"] == "low" for r in rows):
         hours = rows[0]["history_hours"]
         if not (HEDGE.search(answer) or num_in(answer, hours)):

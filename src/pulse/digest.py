@@ -1,7 +1,7 @@
 """The morning digest: one short notification that says whether the last day was quiet or what to look at.
 
 It reads what the other checks already know (Windows health and Defender, autostart changes, flagged processes,
-disks, unusual stretches, alerts sent) and never invents anything. Accepted risks (`vigil ack`) are counted
+disks, unusual stretches, alerts sent) and never invents anything. Accepted risks (`pulse ack`) are counted
 separately and do not make a day "not quiet". The full picture stays in the HTML report, which the digest refreshes."""
 import time
 from pathlib import Path

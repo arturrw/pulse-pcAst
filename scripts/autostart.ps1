@@ -1,4 +1,4 @@
-# Run vigil in the background: the metrics collector (default) or the alert check.
+# Run pulse in the background: the metrics collector (default) or the alert check.
 #   powershell -File scripts\autostart.ps1 install   # register + start now
 #   powershell -File scripts\autostart.ps1 remove    # stop + unregister
 #   powershell -File scripts\autostart.ps1 status
@@ -11,7 +11,7 @@ param([Parameter(Mandatory)][ValidateSet('install', 'remove', 'status')][string]
       [ValidateRange(1, 1440)][int]$Minutes = 15,                              # alerts: how often to check
       [ValidateRange(5, 3600)][int]$Interval = 30)                             # collect: seconds between samples
 
-$TaskName = "vigil-$Task"
+$TaskName = "pulse-$Task"
 $Root = Split-Path -Parent $PSScriptRoot
 $Pythonw = Join-Path $Root '.venv\Scripts\pythonw.exe'   # pythonw = no console window
 
@@ -21,15 +21,16 @@ switch ($Action) {
             if (-not (Test-Path $Exe)) { throw "Not found: $Exe" }
             $Pythonw = $Exe; $Pfx = ''; $Root = Split-Path -Parent $Exe
         } else {
-            $Pfx = '-m vigil '
+            $Pfx = '-m pulse '
             if (-not (Test-Path $Pythonw)) { throw "Not found: $Pythonw (create .venv and run: pip install -e .)" }
         }
-        # The app used to be called pcassist; its job of the same kind is replaced, not left running next to this one.
-        $Old = "pcassist-$Task"
-        if (Get-ScheduledTask -TaskName $Old -ErrorAction SilentlyContinue) {
-            Stop-ScheduledTask -TaskName $Old -ErrorAction SilentlyContinue
-            Unregister-ScheduledTask -TaskName $Old -Confirm:$false
-            Write-Host "Replaced the old '$Old' job."
+        # The app used to be called pcassist, then vigil; a job of the same kind under an old name is replaced, not left running next to this one.
+        foreach ($Old in @("pcassist-$Task", "vigil-$Task")) {
+            if (Get-ScheduledTask -TaskName $Old -ErrorAction SilentlyContinue) {
+                Stop-ScheduledTask -TaskName $Old -ErrorAction SilentlyContinue
+                Unregister-ScheduledTask -TaskName $Old -Confirm:$false
+                Write-Host "Replaced the old '$Old' job."
+            }
         }
         if ($Task -eq 'digest') {
             # Once a day at 09:00; StartWhenAvailable runs it when the PC is switched on later, so a late start still gets one.
@@ -38,7 +39,7 @@ switch ($Action) {
             $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
                 -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -StartWhenAvailable
             Register-ScheduledTask -TaskName $TaskName -Action $act -Trigger $trg -Settings $set `
-                -Description 'vigil morning digest (one summary notification)' -Force | Out-Null
+                -Description 'pulse morning digest (one summary notification)' -Force | Out-Null
             Write-Host "Installed '$TaskName' (runs every day at $At)."
             return
         }
@@ -50,7 +51,7 @@ switch ($Action) {
             $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
                 -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -StartWhenAvailable
             Register-ScheduledTask -TaskName $TaskName -Action $act -Trigger $trg -Settings $set `
-                -Description 'vigil alert check (Windows notifications)' -Force | Out-Null
+                -Description 'pulse alert check (Windows notifications)' -Force | Out-Null
             Write-Host "Installed '$TaskName' (runs every $Minutes minutes)."
             return
         }
@@ -71,7 +72,7 @@ switch ($Action) {
             -MultipleInstances IgnoreNew `
             -StartWhenAvailable
         Register-ScheduledTask -TaskName $TaskName -Action $act -Trigger $trg -Settings $set `
-            -Description 'vigil background metrics collector' -Force | Out-Null
+            -Description 'pulse background metrics collector' -Force | Out-Null
         Start-ScheduledTask -TaskName $TaskName
         Write-Host "Installed and started '$TaskName'."
     }

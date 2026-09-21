@@ -3,7 +3,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from vigil import binaries, db, tools
+from pulse import binaries, db, tools
 
 BS = chr(92)
 
@@ -59,7 +59,7 @@ def test_a_normal_window_finds_nothing():
 
 def test_no_data_is_an_error_and_the_tool_is_registered():
     tools.set_db(Path(tempfile.mkdtemp()) / "empty.db")
-    assert "vigil collect" in tools.process_watch(65)["error"]
+    assert "pulse collect" in tools.process_watch(65)["error"]
     assert "process_watch" in {f.__name__ for f in tools.TOOLS}
 
 

@@ -11,7 +11,7 @@ import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 
-from vigil import db, persistence, setup_tasks, webui, winhealth
+from pulse import db, persistence, setup_tasks, webui, winhealth
 
 winhealth.read_raw = lambda hours: {}                 # never read this machine's event logs, registry or autostart
 winhealth.read_defender_policy = lambda: {}
@@ -52,7 +52,7 @@ class Runner:
         self.calls.append(cmd)
         if "-File" in cmd:
             return 0, "Installed."
-        return 0, json.dumps([{"n": "vigil-collect", "s": self.state}])
+        return 0, json.dumps([{"n": "pulse-collect", "s": self.state}])
 
 
 class Running:
@@ -116,7 +116,7 @@ def test_the_page_needs_the_token_sets_a_strict_cookie_and_carries_a_matching_no
         assert "HttpOnly" in cookie and "SameSite=Strict" in cookie and s.token in cookie
         code, hdr, body = s.request("GET", "/")
         text = body.decode()
-        assert code == 200 and "Vigil" in text
+        assert code == 200 and "Pulse" in text
         nonce = re.search(r"script-src 'nonce-([^']+)'", hdr["Content-Security-Policy"]).group(1)
         assert f'<script nonce="{nonce}">' in text and f'<style nonce="{nonce}">' in text     # only our own script may run
         assert "default-src 'none'" in hdr["Content-Security-Policy"] and "frame-ancestors 'none'" in hdr["Content-Security-Policy"]
@@ -298,7 +298,7 @@ def test_only_the_three_known_jobs_and_two_actions_can_be_run_and_nothing_user_t
 def test_test_notification_and_digest_now_use_the_notifier_and_report_what_they_did():
     s = Running()
     try:
-        assert s.api("POST", "notify", {})[1]["ok"] is True and s.notified[0][0] == "vigil test"
+        assert s.api("POST", "notify", {})[1]["ok"] is True and s.notified[0][0] == "pulse test"
         d = s.api("POST", "digest", {})[1]
         assert d["title"].startswith("Morning digest") and d["shown"] is True and s.notified[-1][0] == d["title"]
         assert (s.path.parent / "digest.log").exists() and (s.path.parent / "reports" / "latest.html").exists()
@@ -328,7 +328,7 @@ def test_the_page_script_is_valid_javascript():
     import shutil
     import subprocess
 
-    from vigil import webui_page
+    from pulse import webui_page
 
     node = shutil.which("node")
     if not node:

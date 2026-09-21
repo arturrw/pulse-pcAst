@@ -3,7 +3,7 @@ import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from vigil import ack, tools, winhealth
+from pulse import ack, tools, winhealth
 
 NOW = datetime(2026, 9, 20, 22, 0)
 _REAL_POLICY_READER = winhealth.read_defender_policy

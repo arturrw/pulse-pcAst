@@ -6,7 +6,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from vigil import db, netstats
+from pulse import db, netstats
 
 MB = 1024 * 1024
 

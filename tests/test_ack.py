@@ -4,7 +4,7 @@ import io
 import tempfile
 from pathlib import Path
 
-from vigil import ack, cli
+from pulse import ack, cli
 
 
 def _db() -> Path:

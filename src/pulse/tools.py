@@ -106,7 +106,7 @@ def _history(metric: str, minutes: int) -> dict:
                 f"SELECT ts, {col} FROM {table} WHERE ts >= ? ORDER BY ts LIMIT 1", (max(since, last_ts - 600),)
             ).fetchone()
     if not n:
-        return {"metric": metric, "error": "no collected data in this window; run `vigil collect`"}
+        return {"metric": metric, "error": "no collected data in this window; run `pulse collect`"}
     covers = _recorded_seconds(stamps) / 60   # recorded time, not the span: the PC may have been off in between
     result = {"metric": metric, "minutes": int(minutes), "samples": n,
               "data_covers_minutes": covers,
@@ -198,7 +198,7 @@ def disk_forecast(days: int = 30) -> list[dict]:
                                   + f" (need {MIN_FORECAST_HOURS}+ h); tell the user this estimate is unreliable")
             out.append(_round(row))
     if not out:
-        return [{"error": "no collected data in this window; run `vigil collect`"}]
+        return [{"error": "no collected data in this window; run `pulse collect`"}]
     return out
 
 
@@ -375,7 +375,7 @@ def anomalies(metric: str, minutes: int = 1440) -> dict:
     ts, vals = [r[0] for r in rows], [r[1] for r in rows]
     inside = [i for i, t in enumerate(ts) if t >= since]
     if len(inside) < 2:
-        return {"metric": metric, "error": "no collected data in this window; run `vigil collect`"}
+        return {"metric": metric, "error": "no collected data in this window; run `pulse collect`"}
     step = sorted(b - a for a, b in zip(ts, ts[1:]))[len(ts) // 2 - 1]
     scored = anomaly.scores(vals, ANOMALY_WINDOW, ts)
     games_seen = [(span, name) for name, p in _recordings().items() if (span := _recording_span(p))]
@@ -434,7 +434,7 @@ def process_watch(minutes: int = 1440) -> dict:
         files = binaries.assess(conn, since)
         net = netwatch.analyze(conn, since, now, {f["name"] for f in files["flagged"]})
     if not n:
-        return {"error": "no collected process data in this window; run `vigil collect`"}
+        return {"error": "no collected process data in this window; run `pulse collect`"}
     for row in r["new"]:
         row["first_seen"] = time.strftime("%Y-%m-%d %H:%M", time.localtime(row.pop("first_seen_ts")))
     spans = [(span, name) for name, p in _recordings().items() if (span := _recording_span(p))]

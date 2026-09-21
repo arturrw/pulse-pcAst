@@ -27,7 +27,7 @@ def _run(cmd: list[str], timeout: int = 60) -> tuple[int, str]:
 def tasks_status(runner=_run) -> dict[str, str | None]:
     """{'collect': 'Running' | 'Ready' | 'Disabled' | None (not installed), ...}"""
     script = ("[Console]::OutputEncoding=[Text.Encoding]::UTF8;"
-              "ConvertTo-Json -InputObject @(Get-ScheduledTask | Where-Object { $_.TaskName -like 'vigil-*' } | "
+              "ConvertTo-Json -InputObject @(Get-ScheduledTask | Where-Object { $_.TaskName -like 'pulse-*' } | "
               "ForEach-Object { [pscustomobject]@{ n = $_.TaskName; s = $_.State.ToString() } }) -Compress")
     try:
         code, out = runner(["powershell", "-NoProfile", "-NonInteractive", "-Command", script])
@@ -36,7 +36,7 @@ def tasks_status(runner=_run) -> dict[str, str | None]:
         return {t: None for t in TASKS}
     rows = rows if isinstance(rows, list) else [rows]
     state = {r["n"]: r["s"] for r in rows if isinstance(r, dict) and "n" in r}
-    return {t: state.get(f"vigil-{t}") for t in TASKS}
+    return {t: state.get(f"pulse-{t}") for t in TASKS}
 
 
 def change_task(task: str, action: str, runner=_run, cfg: dict | None = None) -> tuple[bool, str]:
@@ -52,7 +52,7 @@ def change_task(task: str, action: str, runner=_run, cfg: dict | None = None) ->
             cmd += {"collect": ["-Interval", str(cfg.get("collect_interval", 30))], "alerts": ["-Minutes", str(cfg.get("alerts_interval", 15))],
                     "digest": ["-At", str(cfg.get("digest_time", "09:00"))]}[task]
         if paths.frozen():                       # the jobs run the installed program, not a python from a checkout
-            cmd += ["-Exe", str(Path(sys.executable).with_name("vigilw.exe"))]
+            cmd += ["-Exe", str(Path(sys.executable).with_name("pulsew.exe"))]
         code, out = runner(cmd, 120)
     except (OSError, subprocess.SubprocessError) as e:
         return False, f"could not run PowerShell: {e}"

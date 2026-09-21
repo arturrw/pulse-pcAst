@@ -4,7 +4,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from vigil import ack, alerts, binaries, db, persistence, tools, winhealth
+from pulse import ack, alerts, binaries, db, persistence, tools, winhealth
 
 
 # These tests must not read this machine's event logs or autostart entries: both sources are empty here.

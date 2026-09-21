@@ -51,4 +51,4 @@ foreach ($v in $Only) {
 }
 
 Write-Host "`n=== Summary ($Tag) ==="
-& $Python -m vigil session summary (Join-Path $Root "data\bench") --tag $Tag --process cs2.exe --slices
+& $Python -m pulse session summary (Join-Path $Root "data\bench") --tag $Tag --process cs2.exe --slices

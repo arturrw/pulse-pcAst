@@ -1,4 +1,4 @@
-# Vigil
+# Pulse
 
 [![tests](https://github.com/arturrw/pc-ai-assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/arturrw/pc-ai-assistant/actions/workflows/tests.yml)
 
@@ -6,13 +6,13 @@ Local AI assistant that analyzes the state of your own computer. Everything runs
 (psutil + NVML for metrics, SQLite for storage, Ollama for the LLM). It only reads the state of your system: it
 writes nothing but its own files under `data/` and never changes, stops or deletes anything else. Windows only.
 
-- **Ask your PC in plain language** (`vigil chat`): load, disk space and when a disk will fill up, temperature
+- **Ask your PC in plain language** (`pulse chat`): load, disk space and when a disk will fill up, temperature
   history, the heaviest processes, FPS of your game recordings. The model can only call read-only tools and every
   number comes from them.
-- **Notices what is unusual** (`vigil alerts`): a hot GPU, a nearly full disk, an unusual stretch of RAM or
+- **Notices what is unusual** (`pulse alerts`): a hot GPU, a nearly full disk, an unusual stretch of RAM or
   temperature, and processes that stand out (a disguised system file, a broken signature, a program listening or
   connecting where it never did) as a Windows notification. It is a behavioral check, not an antivirus.
-- **One-page report** (`vigil report`) and **game benchmarks** (FPS, 1% lows, what limits the frame rate).
+- **One-page report** (`pulse report`) and **game benchmarks** (FPS, 1% lows, what limits the frame rate).
 
 ![Example report (synthetic demo data)](docs/report.png)
 *Example report built from synthetic demo data (`scripts/seed_fake.py`), not from a real machine.*
@@ -22,7 +22,7 @@ writes nothing but its own files under `data/` and never changes, stops or delet
 - [x] Stage 2: LLM tools + chat via Ollama (`qwen3:8b`)
 - [x] Stage 3a: disk-fill forecast (`disk_forecast`, needs 24+ h of history to be reliable)
 - [x] Stage 3b: anomaly detection for state metrics (inside `metrics_history`, statistical, see below)
-- [x] Stage 4: HTML report of the history (`vigil report`); there is no live dashboard
+- [x] Stage 4: HTML report of the history (`pulse report`); there is no live dashboard
 
 ## Quick start
 1. Install Python 3.10+ and [Ollama](https://ollama.com), then `ollama pull qwen3:8b`.
@@ -37,10 +37,10 @@ writes nothing but its own files under `data/` and never changes, stops or delet
    ```powershell
    powershell -File scripts\autostart.ps1 install
    ```
-4. Ask about your PC: `vigil chat`. For example "how much free space do I have?", "was there a spike in GPU
+4. Ask about your PC: `pulse chat`. For example "how much free space do I have?", "was there a spike in GPU
    temperature in the last hour?", "what is using the most CPU?", "when will my disk fill up?" (a reliable answer
    needs 24+ h of history). The model only calls read-only tools; it cannot change anything.
-5. See the history at a glance: `vigil report --open` (charts, unusual periods, disks, heaviest processes).
+5. See the history at a glance: `pulse report --open` (charts, unusual periods, disks, heaviest processes).
 6. Optional, for games: record a session with PresentMon (see [Game sessions](#game-sessions-fps--frame-time-analysis))
    and ask "show the FPS of my last recording" or "compare recordings A and B".
 
@@ -60,17 +60,17 @@ pip install -e .
 
 ## Usage
 ```powershell
-vigil collect --once          # one sample, prints summary
-vigil collect --interval 30   # keep collecting every 30 s (history for the chat)
-vigil scan C:\ --limit 10     # largest subfolders of a directory
-vigil chat                    # chat with the local model (needs Ollama running)
-vigil chat --think            # enable model reasoning (slower)
-vigil chat --model <name>     # use another Ollama model
-vigil report --hours 24 --open  # HTML report of the last 24 h (written to data/reports/latest.html)
+pulse collect --once          # one sample, prints summary
+pulse collect --interval 30   # keep collecting every 30 s (history for the chat)
+pulse scan C:\ --limit 10     # largest subfolders of a directory
+pulse chat                    # chat with the local model (needs Ollama running)
+pulse chat --think            # enable model reasoning (slower)
+pulse chat --model <name>     # use another Ollama model
+pulse report --hours 24 --open  # HTML report of the last 24 h (written to data/reports/latest.html)
 ```
 
 Metrics go to `data/metrics.db` (override with `--db`). Questions about history
-("how did GPU temperature change over the last hour?") need `vigil collect` to have run
+("how did GPU temperature change over the last hour?") need `pulse collect` to have run
 for a while; without data the assistant tells you to start it.
 
 ## Background collection (autostart)
@@ -84,7 +84,7 @@ powershell -File scripts\autostart.ps1 status
 powershell -File scripts\autostart.ps1 remove    # stop and unregister
 ```
 Data stays in `data/metrics.db` (roughly 5-10 MB/day, measured from the first samples at the default 30 s interval; history older than 90 days is deleted automatically, change with `collect --keep-days N`, 0 = keep all).
-Manual cleanup and file shrink: `vigil prune --days 30`.
+Manual cleanup and file shrink: `pulse prune --days 30`.
 
 ## Process watch (unusual load)
 `process_watch` (chat tool and a section of the report) looks at the processes in two ways.
@@ -118,7 +118,7 @@ It is **not** an antivirus and never says a process is malicious or safe. The co
 processes (~26 per sample) and cannot read the file path of protected Windows processes, so a quiet process that
 never opens a connection is invisible to it, and there is no parent process or amount of data sent. Anything odd
 still needs a human check: Task Manager -> Open file location, and a Windows Defender scan. Thresholds are in
-`src/vigil/procwatch.py`, `src/vigil/binaries.py` and `src/vigil/netwatch.py`.
+`src/pulse/procwatch.py`, `src/pulse/binaries.py` and `src/pulse/netwatch.py`.
 
 ## Windows health, autostart and the timeline
 Three read-only tools that ask Windows itself (PowerShell, no administrator rights needed):
@@ -145,14 +145,14 @@ Three read-only tools that ask Windows itself (PowerShell, no administrator righ
   what.
 
 **Accepted risks.** If you know about a finding and accept it (say a game booster that switches Defender off on
-purpose), tell the assistant once: `vigil ack defender-realtime-off --note "why"`. It then stops alerting, and the
-tools and the report show it as *accepted* with your note and the date, so it is never invisible. `vigil ack` lists
-them, `vigil ack --forget <id>` makes a finding count again, an id ending in `*` matches a prefix. The ids are in the
+purpose), tell the assistant once: `pulse ack defender-realtime-off --note "why"`. It then stops alerting, and the
+tools and the report show it as *accepted* with your note and the date, so it is never invisible. `pulse ack` lists
+them, `pulse ack --forget <id>` makes a finding count again, an id ending in `*` matches a prefix. The ids are in the
 tool output (`id` on every finding, like `defender-realtime-off` or `autorun:scheduled_task:<name>`). This changes
 nothing on the machine.
 
 ## Alerts
-`vigil alerts` checks the history once and shows a Windows notification (also written to `data/alerts.log` and
+`pulse alerts` checks the history once and shows a Windows notification (also written to `data/alerts.log` and
 listed in the report) for things worth interrupting you for: the collector stopped recording, a GPU at 85 C or more
 for 5 minutes, a disk with under 15 GB (or 5%) free or a 14-day fill-up forecast, an unusual stretch of temperature /
 RAM / swap that is also high (RAM at 85% or more, GPU at 80 C or more, swap at 20% or more) and not explained by a
@@ -162,14 +162,14 @@ file, a suspicious file using the network, a connection to a mining-pool / Tor /
 listening for incoming connections, a process using 40% of the CPU, memory growing 1 GB/h). The same alert is not repeated for 6 h (serious) or
 24 h (the rest). A name that is merely new is not alerted: that evidence is too weak. Windows findings (a crash
 or blue screen, Defender off or detecting something, a hardware error) and a new suspicious autostart entry are alerted
-too, once a day at most, unless you accepted them (`vigil ack`).
+too, once a day at most, unless you accepted them (`pulse ack`).
 ```powershell
-vigil alerts --test                                     # show a test notification
-vigil alerts --dry-run                                  # print what would be sent, send and remember nothing
+pulse alerts --test                                     # show a test notification
+pulse alerts --dry-run                                  # print what would be sent, send and remember nothing
 powershell -File scripts\autostart.ps1 install -Task alerts  # check every 15 minutes in the background
 ```
 If the test notification does not appear, check that Windows Focus assist / Do not disturb is off; the alerts still
-reach `data/alerts.log` and the report. Thresholds are at the top of `src/vigil/alerts.py`.
+reach `data/alerts.log` and the report. Thresholds are at the top of `src/pulse/alerts.py`.
 
 ## Traffic per process (on demand)
 The collector knows which process talks to which address, but not how much: Windows does not give per-process network
@@ -177,7 +177,7 @@ volume to normal programs (checked: the I/O counters of a process that moves 30 
 source is ETW, the system's event tracing, and starting a trace needs administrator rights. So this is a command you run
 yourself, in a terminal opened as administrator, when you want to know who is uploading right now:
 ```powershell
-vigil netstats --seconds 60          # measure 60 s; --all adds loopback and LAN; --debug shows what was read
+pulse netstats --seconds 60          # measure 60 s; --all adds loopback and LAN; --debug shows what was read
 ```
 It starts a short trace of `Microsoft-Windows-Kernel-Network` with `logman`, stops it, adds the sizes up per process and
 destination (TCP and UDP, IPv4 and IPv6, sent and received separately), prints a table, notes any process that sent 20 MB
@@ -187,20 +187,20 @@ trace session, and nothing is sent anywhere. A big upload from a browser or a sy
 see who talks how much. Without administrator rights the command says so and starts nothing.
 
 ## Morning digest
-`vigil digest` builds one short notification for the last 24 hours: "nothing new to look at", or the few things that
+`pulse digest` builds one short notification for the last 24 hours: "nothing new to look at", or the few things that
 need a look (open Windows / Defender findings, a new suspicious autostart entry, a flagged process, an unusual high
 stretch of temperature / RAM / swap, an almost full disk). The lines under it give the numbers (least free disk, hours
 actually recorded, alerts sent). Accepted risks are counted and shown ("3 accepted by you"), never hidden, and they do
 not make a day "not quiet". It also refreshes `data/reports/latest.html` and appends to `data/digest.log`.
 ```powershell
-vigil digest --dry-run                                    # print it, show and write nothing
+pulse digest --dry-run                                    # print it, show and write nothing
 powershell -File scripts\autostart.ps1 install -Task digest  # every morning at 09:00 (runs later if the PC was off)
 ```
 
-## Desktop-style app (`vigil ui`)
+## Desktop-style app (`pulse ui`)
 
 ```
-vigil ui            # opens the dashboard in your browser
+pulse ui            # opens the dashboard in your browser
 ```
 
 One window with tabs: overview (recording, Windows and Defender, autostart, processes, disks, report), Ask (the chat, with the
@@ -211,7 +211,7 @@ The server stops a few minutes after the tab is closed (`--idle 0` disables that
 embedding in a desktop shell.
 
 ## Report
-`vigil report` writes one self-contained HTML file (inline SVG charts, no scripts, no network, light and dark
+`pulse report` writes one self-contained HTML file (inline SVG charts, no scripts, no network, light and dark
 theme): a summary (min / average / max), unusual periods, charts of GPU temperature, CPU, RAM and GPU load, disks
 with the fill-up forecast, the heaviest processes and the latest game recordings. It uses the same functions as the
 chat tools, so both always show the same numbers. Gaps where the PC was off are left blank instead of being joined
@@ -232,8 +232,8 @@ powershell -File scripts\record_presentmon.ps1 -Process cs2.exe -Name before_sha
 ```
 Analyze (window = the longest stretch of normal FPS, so map loading is cut off; override with `--start/--end HH:MM`):
 ```powershell
-python -m vigil session report data\sessions\cs2_presentmon.csv --hml data\sessions\cs2.hml --process cs2.exe
-python -m vigil session compare before.csv after.csv --hml-before a.hml --hml-after b.hml
+python -m pulse session report data\sessions\cs2_presentmon.csv --hml data\sessions\cs2.hml --process cs2.exe
+python -m pulse session compare before.csv after.csv --hml-before a.hml --hml-after b.hml
 ```
 PresentMon and Afterburner stamp time in different zones; the shift is detected automatically from the two
 recordings (`--pm-offset-hours` overrides). `data/sessions/` is git-ignored. Use the same scene or benchmark
@@ -305,7 +305,7 @@ What if you tell the chat to "forget all previous rules", to write a poem or cod
 - **It cannot do damage.** The model only calls thirteen read-only tools; none of them deletes, changes, runs or sends
   anything, and their arguments are restricted (metric names from a fixed list, recordings looked up by name, folder
   scans only on local fixed drives: `..` and links are resolved first, network shares and device paths are refused;
-  your own `vigil scan` command is not restricted). The
+  your own `pulse scan` command is not restricted). The
   worst a fooled model can produce is a wrong sentence. The system prompt is in this repository, so there is nothing
   secret to leak.
 - **Text found in your data is not trusted.** Process names, file names and paths come from the machine, so a
@@ -322,7 +322,7 @@ What if you tell the chat to "forget all previous rules", to write a poem or cod
   security boundary. The real boundary is that its tools are read-only.
 
 ## Anomaly detection
-`src/vigil/anomaly.py`: a value counts as unusual when it stays far outside the median of the previous
+`src/pulse/anomaly.py`: a value counts as unusual when it stays far outside the median of the previous
 ~2.5 h (robust z-score on median / MAD, only past samples are used), for at least ~3 min, and moves at
 least a per-metric minimum (8 degrees, 8 points of RAM, 5 points of swap) from what was typical. A gap in the
 history (PC off) resets the window, so the first ~37 min after each start are not checked. Only state metrics

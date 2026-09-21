@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from vigil import alerts, explain, settings  # noqa: E402
+from pulse import alerts, explain, settings  # noqa: E402
 
 
 def test_bad_values_are_refused_and_good_ones_kept():

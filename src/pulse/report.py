@@ -10,6 +10,12 @@ from . import alerts, anomaly, db, netstats, tools
 CHARTS = [("gpu_temp_c", "GPU temperature", "°C"), ("cpu_percent", "CPU load", "%"),
           ("ram_percent", "RAM used", "%"), ("gpu_util_percent", "GPU load", "%")]
 MAX_POINTS = 360          # chart resolution: a day at 30 s is 2880 samples, averaged into buckets
+
+
+def cells(hours: float) -> int:
+    """How many equal time cells the charts of a period are split into (one cell is at least a minute wide). All charts
+    of a report use the same cells, so the same cell number means the same moment in every chart."""
+    return max(20, min(MAX_POINTS, int(hours * 60)))
 W, H, PAD_L, PAD_R, PAD_T, PAD_B = 720, 170, 46, 10, 10, 24
 
 STYLE = """
@@ -29,6 +35,8 @@ svg .pt:hover .cur,svg .pt:hover .dot,svg .pt:hover .tip{display:block}
 /* shown inside the app: no second background and no narrow column, the app page already provides them */
 body.embed{background:transparent}body.embed main{max-width:none;padding:0 0 24px}body.embed h1{display:none}body.embed section{background:var(--card);border:1px solid var(--grid);border-radius:12px}
 """
+# hovering one moment in a chart shows the guide, dot and label of that moment in all charts (pure CSS: no script runs here)
+STYLE += "".join(f".charts:has(.c{k}:hover) .c{k} :is(.cur,.dot,.tip){{display:block}}" for k in range(MAX_POINTS))
 
 
 def _clock(ts: float, fmt: str = "%H:%M") -> str:
@@ -60,20 +68,20 @@ def segments(points: list[tuple[float, float]]) -> list[list[tuple[float, float]
     return out
 
 
-def downsample(points: list[tuple[float, float]], t0: float, t1: float) -> list[tuple[float, float]]:
-    """Average into at most MAX_POINTS time buckets (empty buckets stay empty, so gaps survive)."""
-    if len(points) <= MAX_POINTS:
-        return points
-    width = (t1 - t0) / MAX_POINTS
+def downsample(points: list[tuple[float, float]], t0: float, t1: float, n: int = MAX_POINTS) -> list[tuple[float, float]]:
+    """Average into the n time cells of the period; a cell without samples stays empty, so gaps survive. Each point is
+    placed in the middle of its cell."""
+    width = (t1 - t0) / n
     buckets: dict[int, list[float]] = {}
     for t, v in points:
-        buckets.setdefault(min(MAX_POINTS - 1, int((t - t0) / width)), []).append(v)
+        buckets.setdefault(min(n - 1, max(0, int((t - t0) / width))), []).append(v)
     return [(t0 + (k + 0.5) * width, sum(v) / len(v)) for k, v in sorted(buckets.items())]
 
 
 def chart(metric: str, title: str, unit: str, hours: float, now: float) -> str:
     t0, t1 = now - hours * 3600, now
-    pts = downsample(series(metric, hours, now), t0, t1)
+    n = cells(hours)
+    pts = downsample(series(metric, hours, now), t0, t1, n)
     if len(pts) < 2:
         return f"<h2>{escape(title)}</h2><p class='mute'>no data in this period</p>"
     lo, hi = min(v for _, v in pts), max(v for _, v in pts)
@@ -102,16 +110,16 @@ def chart(metric: str, title: str, unit: str, hours: float, now: float) -> str:
             parts.append(f"<circle cx='{x(seg[0][0]):.1f}' cy='{y(seg[0][1]):.1f}' r='1.6' fill='var(--line)'/>")
         else:
             parts.append("<polyline class='l' points='" + " ".join(f"{x(t):.1f},{y(v):.1f}" for t, v in seg) + "'/>")
-    xs = [x(t) for t, _ in pts]
-    for i, (t, v) in enumerate(pts):   # one invisible column per sample: hovering it shows that sample
-        left = max(xs[i] - (xs[i] - xs[i - 1]) / 2, xs[i] - 5) if i else xs[i] - 5
-        right = min(xs[i] + (xs[i + 1] - xs[i]) / 2, xs[i] + 5) if i < len(pts) - 1 else xs[i] + 5
-        label = f"{_clock(t, '%d %b %H:%M' if long else '%H:%M')} · {v:.1f} {unit}"
+    cw = (W - PAD_L - PAD_R) / n
+    for t, v in pts:   # one invisible column per cell that has data: hovering it shows that moment (in every chart)
+        k = min(n - 1, int((t - t0) / ((t1 - t0) / n)))
+        cx = x(t)
+        label = f"{_clock(t, '%d %b %H:%M' if long else '%H:%M')} \u00b7 {v:.1f} {unit}"
         bw = 7 * len(label) + 12
-        bx = min(max(xs[i] - bw / 2, PAD_L), W - PAD_R - bw)
-        parts.append(f"<g class='pt'><rect class='hit' x='{left:.1f}' y='{PAD_T}' width='{max(right - left, 1):.1f}' height='{H - PAD_T - PAD_B}'/>"
-                     f"<line class='cur' x1='{xs[i]:.1f}' x2='{xs[i]:.1f}' y1='{PAD_T}' y2='{H - PAD_B}'/>"
-                     f"<circle class='dot' cx='{xs[i]:.1f}' cy='{y(v):.1f}' r='3.5'/>"
+        bx = min(max(cx - bw / 2, PAD_L), W - PAD_R - bw)
+        parts.append(f"<g class='pt c{k}'><rect class='hit' x='{PAD_L + k * cw:.1f}' y='{PAD_T}' width='{max(cw, 1):.1f}' height='{H - PAD_T - PAD_B}'/>"
+                     f"<line class='cur' x1='{cx:.1f}' x2='{cx:.1f}' y1='{PAD_T}' y2='{H - PAD_B}'/>"
+                     f"<circle class='dot' cx='{cx:.1f}' cy='{y(v):.1f}' r='3.5'/>"
                      f"<g class='tip'><rect x='{bx:.1f}' y='{PAD_T}' width='{bw}' height='20' rx='5'/>"
                      f"<text x='{bx + bw / 2:.1f}' y='{PAD_T + 14}' text-anchor='middle'>{escape(label)}</text></g></g>")
     parts.append("</svg>")
@@ -298,7 +306,7 @@ def build_report(hours: float = 24, now: float | None = None) -> str:
     else:
         cov = (f"<p class='warn'>The collector recorded only {recorded:.1f} h of these {hours:g} h "
                "(the PC was off or asleep in between); gaps are left blank.</p>") if recorded < hours * 0.8 else ""
-        charts = "".join(chart(m, t, u, hours, now) for m, t, u in CHARTS)
+        charts = "<div class='charts'>" + "".join(chart(m, t, u, hours, now) for m, t, u in CHARTS) + "</div>"
         body = "".join(f"<section>{s}</section>" for s in (cov + overview(hours, now), unusual(hours), alerts_section(), health_section(hours), startup_section(hours), watch(hours), traffic_section(), charts,
                                                           disks(), processes(hours), games()) if s)
     return (f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"

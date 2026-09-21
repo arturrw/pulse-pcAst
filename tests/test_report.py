@@ -123,7 +123,7 @@ def test_chart_axes_never_go_below_zero_for_percent():
 def test_every_chart_sample_has_a_hover_label_with_time_and_value():
     _db(samples=100)
     html = report.build_report(2)
-    assert html.count("class='pt'") >= 4 * 50                       # one hoverable column per plotted sample, in all four charts
+    assert html.count("class='pt c") >= 4 * 50                       # one hoverable column per plotted sample, in all four charts
     assert re.search(r"class='tip'.*?>\d\d:\d\d · 55\.0 °C<", html)  # the label carries the time and the value with its unit
     assert "<script" not in html                                     # done with CSS only: the report still runs no script
 
@@ -133,6 +133,17 @@ def test_a_period_longer_than_a_day_puts_dates_on_the_axis_and_in_the_hover_labe
     assert re.search(r">\d\d [A-Z][a-z]{2} \d\d:\d\d<", report.build_report(48))       # axis: "22 Sep 14:00"
     assert re.search(r"class='tip'.*?>\d\d [A-Z][a-z]{2} \d\d:\d\d · ", report.build_report(48))
     assert not re.search(r">\d\d [A-Z][a-z]{2} \d\d:\d\d<", report.build_report(2))     # within a day the time alone is enough
+
+
+def test_the_charts_share_time_cells_so_hovering_one_moment_shows_it_in_every_chart():
+    _db(samples=100)
+    html = report.build_report(2)
+    charts = html[html.index("<div class='charts'>"):]
+    by_chart = [set(re.findall(r"class='pt (c\d+)'", part)) for part in charts.split("<svg")[1:5]]
+    assert len(by_chart) == 4 and all(by_chart)
+    assert by_chart[0] & by_chart[1] & by_chart[2] & by_chart[3]                   # the same moment has the same cell in all four
+    assert ".charts:has(.c0:hover) .c0 :is(.cur,.dot,.tip)" in html                # and hovering it lights that cell everywhere
+    assert report.cells(1) == 60 and report.cells(24) == 360 and report.cells(0.1) == 20
 
 
 if __name__ == "__main__":

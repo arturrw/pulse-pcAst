@@ -31,14 +31,19 @@ th{color:var(--mute);font-weight:500}svg{width:100%;height:auto;display:block}.w
 svg text{fill:var(--mute);font-size:11px}svg .g{stroke:var(--grid)}svg .l{fill:none;stroke:var(--line);stroke-width:1.6;stroke-linejoin:round}
 td,th{overflow-wrap:anywhere;vertical-align:top}section{overflow-wrap:anywhere}
 /* hover on a chart: a guide line, a dot and a label with the time and the value (no script needed) */
-svg .hit{fill:transparent}svg .cur,svg .dot,svg .tip{display:none;pointer-events:none}svg .cur{stroke:var(--mute);stroke-dasharray:3 3}svg .dot{fill:var(--line)}
+svg .hit{fill:transparent}svg .cur,svg .dot,svg .tip{opacity:0;pointer-events:none;transition:opacity .12s ease}svg .cur{stroke:var(--mute);stroke-dasharray:3 3}svg .dot{fill:var(--line)}
+svg .band{fill:var(--warn);opacity:.28}
 svg .tip rect{fill:var(--ink)}svg .tip text{fill:var(--card);font-size:12px}
-svg .pt:hover .cur,svg .pt:hover .dot,svg .pt:hover .tip{display:block}
+svg .pt:hover .cur,svg .pt:hover .dot,svg .pt:hover .tip{opacity:1}
+/* headings of tables the app makes sortable (the page sets the classes) */
+th.sortable{cursor:pointer;user-select:none;transition:color .15s}th.sortable:hover,th.sortable:focus-visible{color:var(--ink);outline:none}
+th.sortable::after{content:'↕';margin-left:6px;opacity:.35;font-size:11px}th[aria-sort=ascending]::after{content:'▲';opacity:1}th[aria-sort=descending]::after{content:'▼';opacity:1}
+@media (prefers-reduced-motion:reduce){svg .cur,svg .dot,svg .tip{transition:none}}
 /* shown inside the app: no second background and no narrow column, the app page already provides them */
-body.embed{background:transparent}body.embed main{max-width:none;padding:0 0 24px}body.embed h1{display:none}body.embed section{background:var(--card);border:1px solid var(--grid);border-radius:12px}
+body.embed{background:transparent}body.embed main{max-width:none;padding:0 0 24px}body.embed h1{display:none}body.embed .sec-unusual{display:none}body.embed section{background:var(--card);border:1px solid var(--grid);border-radius:12px}
 """
 # hovering one moment in a chart shows the guide, dot and label of that moment in all charts (pure CSS: no script runs here)
-STYLE += "".join(f".charts:has(.c{k}:hover) .c{k} :is(.cur,.dot,.tip){{display:block}}" for k in range(MAX_POINTS))
+STYLE += "".join(f".charts:has(.c{k}:hover) .c{k} :is(.cur,.dot,.tip){{opacity:1}}" for k in range(MAX_POINTS))
 
 
 def _clock(ts: float, fmt: str = "%H:%M") -> str:
@@ -80,7 +85,7 @@ def downsample(points: list[tuple[float, float]], t0: float, t1: float, n: int =
     return [(t0 + (k + 0.5) * width, sum(v) / len(v)) for k, v in sorted(buckets.items())]
 
 
-def chart(metric: str, title: str, unit: str, hours: float, now: float, step: float = 30.0) -> str:
+def chart(metric: str, title: str, unit: str, hours: float, now: float, step: float = 30.0, bands: list | None = None) -> str:
     t0, t1 = now - hours * 3600, now
     n = cells(hours, step)
     pts = downsample(series(metric, hours, now), t0, t1, n)
@@ -107,6 +112,10 @@ def chart(metric: str, title: str, unit: str, hours: float, now: float, step: fl
         t = t0 + (t1 - t0) * frac
         anchor = "start" if frac == 0 else "end" if frac == 1 else "middle"
         parts.append(f"<text x='{x(t):.1f}' y='{H - 6}' text-anchor='{anchor}'>{_clock(t, '%d %b %H:%M' if long else '%H:%M')}</text>")
+    bands = bands or []                       # unusual stretches of this metric: (start, end) in epoch seconds
+    for b0, b1 in bands:
+        x0, x1 = x(max(b0, t0)), x(min(b1, t1))
+        parts.append(f"<rect class='band' x='{x0:.1f}' y='{PAD_T}' width='{max(x1 - x0, 6):.1f}' height='{H - PAD_T - PAD_B}'/>")
     for seg in segments(pts):
         if len(seg) == 1:   # a lone sample between two gaps: a dot, not an invisible line
             parts.append(f"<circle cx='{x(seg[0][0]):.1f}' cy='{y(seg[0][1]):.1f}' r='1.6' fill='var(--line)'/>")
@@ -116,7 +125,7 @@ def chart(metric: str, title: str, unit: str, hours: float, now: float, step: fl
     for t, v in pts:   # one invisible column per cell that has data: hovering it shows that moment (in every chart)
         k = min(n - 1, int((t - t0) / ((t1 - t0) / n)))
         cx = x(t)
-        label = f"{_clock(t, '%d %b %H:%M' if long else '%H:%M')} \u00b7 {v:.1f} {unit}"
+        label = f"{_clock(t, '%d %b %H:%M' if long else '%H:%M')} \u00b7 {v:.1f} {unit}" + (" \u00b7 unusual" if any(b0 <= t <= b1 for b0, b1 in bands) else "")
         bw = 7 * len(label) + 12
         bx = min(max(cx - bw / 2, PAD_L), W - PAD_R - bw)
         parts.append(f"<g class='pt c{k}'><rect class='hit' x='{PAD_L + k * cw:.1f}' y='{PAD_T}' width='{max(cw, 1):.1f}' height='{H - PAD_T - PAD_B}'/>"
@@ -147,10 +156,21 @@ def overview(hours: float, now: float) -> str:
     return "<h2>Summary</h2>" + _table(["", "min", "average", "max", "max at"], rows)
 
 
-def unusual(hours: float) -> str:
+def state_anomalies(hours: float) -> dict[str, dict]:
+    """The unusual stretches of every state metric (see tools.anomalies), computed once per report."""
+    return {m: tools.anomalies(m, int(hours * 60)) for m in anomaly.STATE_METRICS}
+
+
+def bands_of(anom: dict, metric: str, now: float) -> list[tuple[float, float]]:
+    r = anom.get(metric) or {}
+    return [(now - e["minutes_ago"] * 60, now - e["minutes_ago"] * 60 + e["duration_minutes"] * 60) for e in r.get("events", [])]
+
+
+def unusual(hours: float, anom: dict | None = None) -> str:
     lines, clean = [], []
+    anom = anom if anom is not None else state_anomalies(hours)
     for metric in anomaly.STATE_METRICS:
-        r = tools.anomalies(metric, int(hours * 60))
+        r = anom[metric]
         if "error" in r:
             continue
         if not r["events"]:
@@ -310,9 +330,12 @@ def build_report(hours: float = 24, now: float | None = None) -> str:
                "(the PC was off or asleep in between); gaps are left blank.</p>") if recorded < hours * 0.8 else ""
         gaps = sorted(b - a for a, b in zip(stamps, stamps[1:]) if b - a < 3600)
         step = gaps[len(gaps) // 2] if gaps else 30.0               # how often the collector writes a sample
-        charts = "<div class='charts'>" + "".join(chart(m, t, u, hours, now, step) for m, t, u in CHARTS) + "</div>"
-        body = "".join(f"<section>{s}</section>" for s in (cov + overview(hours, now), unusual(hours), alerts_section(), health_section(hours), startup_section(hours), watch(hours), traffic_section(), charts,
-                                                          disks(), processes(hours), games()) if s)
+        anom = state_anomalies(hours)
+        charts = "<div class='charts'>" + "".join(chart(m, t, u, hours, now, step, bands_of(anom, m, now)) for m, t, u in CHARTS) + "</div>"
+        parts = (("summary", cov + overview(hours, now)), ("unusual", unusual(hours, anom)), ("alerts", alerts_section()),
+                 ("health", health_section(hours)), ("startup", startup_section(hours)), ("watch", watch(hours)),
+                 ("traffic", traffic_section()), ("charts", charts), ("disks", disks()), ("processes", processes(hours)), ("games", games()))
+        body = "".join(f"<section class='sec-{name}'>{s}</section>" for name, s in parts if s)
     return (f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"
             f"<title>PC report</title><style>{STYLE}</style></head><body><main><h1>PC report</h1>"
             f"<div class='mute'>last {hours:g} h, up to {_clock(now, '%Y-%m-%d %H:%M')} · generated locally, nothing leaves this machine</div>"

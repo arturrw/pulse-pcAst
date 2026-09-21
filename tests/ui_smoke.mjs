@@ -53,6 +53,8 @@ async function check(theme, width) {
     if (sides.sw > sides.W + 1 || sides.bad.length) fail(tab, `sticks out sideways (page ${sides.sw}px in a ${sides.W}px window): ${sides.bad.join(", ")}`);
     if ((await s.evalJs("document.querySelector('#view').innerText.trim().length")) < 20) fail(tab, "the page is empty");
     if (tab !== "ask" && (await s.evalJs("document.querySelectorAll('#view .err').length"))) fail(tab, "shows an error: " + (await s.evalJs("document.querySelector('#view .err').textContent")));
+    const motion = await s.evalJs("(() => { const v = document.querySelector('#view > *'); const b = document.querySelector('button'); return [getComputedStyle(v).animationName, parseFloat(getComputedStyle(b).transitionDuration) > 0, getComputedStyle(document.querySelector('#tabs .ink')).transitionDuration]; })()");
+    if (motion[0] !== "rise" || !motion[1] || parseFloat(motion[2]) <= 0) fail(tab, "the page or the buttons do not animate: " + JSON.stringify(motion));
     await s.shot(`${ctx}-${tab}`);
   };
 
@@ -65,8 +67,14 @@ async function check(theme, width) {
     await sleep(300);
     const pos2 = await s.evalJs(`(() => { const f = document.querySelector('iframe'); const hits = f.contentDocument.querySelectorAll('svg')[0].querySelectorAll('.hit'); const hit = hits[Math.floor(hits.length / 2)]; const r = hit.getBoundingClientRect(), fr = f.getBoundingClientRect(); return [Math.round(fr.left + r.left + r.width / 2), Math.round(fr.top + r.top + r.height / 2)]; })()`);
     await s.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: pos2[0], y: pos2[1] }); await sleep(400);
-    const shown = await s.evalJs("(() => { const d = document.querySelector('iframe').contentDocument; return [...d.querySelectorAll('svg')].map((svg) => [...svg.querySelectorAll('.tip')].filter((t) => getComputedStyle(t).display === 'block').length); })()");
+    const shown = await s.evalJs("(() => { const d = document.querySelector('iframe').contentDocument; return [...d.querySelectorAll('svg')].map((svg) => [...svg.querySelectorAll('.tip')].filter((t) => getComputedStyle(t).opacity === '1').length); })()");
     if (shown.slice(0, 4).some((n) => n !== 1)) fail("overview", "hovering one moment did not show a value in every chart: " + JSON.stringify(shown));
+    // a click on a table heading sorts that table, another click reverses it
+    const sorted = await s.evalJs(`(() => { const d = document.querySelector('iframe').contentDocument; const th = d.querySelector('th.sortable'); if (!th) return 'no sortable heading'; th.click(); const a = th.getAttribute('aria-sort'); th.click(); return a + '/' + th.getAttribute('aria-sort'); })()`);
+    if (!/^(ascending\/descending|descending\/ascending)$/.test(sorted)) fail("overview", "clicking a table heading did not sort: " + sorted);
+    // the underline under the tabs sits under the chosen one
+    const ink = await s.evalJs("(() => { const n = document.querySelector('#tabs'); const on = n.querySelector('button.on'), i = n.querySelector('.ink'); return [Math.abs(parseFloat(i.style.left) - on.offsetLeft), parseFloat(i.style.width) - on.offsetWidth]; })()");
+    if (ink[0] > 1 || Math.abs(ink[1]) > 1) fail("overview", "the tab underline is not under the chosen tab: " + JSON.stringify(ink));
     await s.evalJs("document.querySelector('main').scrollTop = 0");
   }));
 
@@ -93,6 +101,16 @@ async function check(theme, width) {
   }));
 
   await guard("setup", () => settle("setup"));
+  // an unusual moment offers a question for the assistant; the button opens a new chat with it (only when the data has one)
+  await guard("unusual", async () => {
+    await s.evalJs("go('overview')");
+    await s.waitFor("!document.querySelector('#view').innerText.includes('Loading')", "the overview");
+    await sleep(1500);
+    const has = await s.evalJs("[...document.querySelectorAll('#view button')].some((b) => /What could it be/.test(b.textContent))");
+    if (!has) return;
+    await s.evalJs("[...document.querySelectorAll('#view button')].find((b) => /What could it be/.test(b.textContent)).click()");
+    await s.waitFor("document.querySelector('.msg.me') && /unusual/.test(document.querySelector('.msg.me').textContent)", "the question to appear in a new chat");
+  });
   const filtered = s.errors.filter((e, i) => s.errors.indexOf(e) === i);
   if (filtered.length) fail("console", filtered.slice(0, 5).join(" | "));
   s.close();

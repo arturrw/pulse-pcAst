@@ -22,6 +22,8 @@ from .webui_page import render_page
 
 MAX_BODY = 16 * 1024
 MAX_MESSAGE = 2000
+ANOMALY_TEXT = {"ram_percent": ("Memory use", "%"), "ram_used_mb": ("Memory in use", " MB"), "swap_percent": ("Swap file use", "%"),
+                "gpu_temp_c": ("Graphics card temperature", " °C")}
 KEEP_MESSAGES = 24           # the conversation the model sees, besides the system prompt
 IDLE_SECONDS = 300           # no heartbeat from the page for this long: the tab is closed, stop the server
 STATUS_TTL = 45              # the Windows checks take seconds: reuse them for a moment
@@ -158,6 +160,45 @@ class App:
             return lines[-1] if lines else ""
         except OSError:
             return ""
+
+    def anomalies(self, hours=24) -> dict:
+        """The unusual stretches of the state metrics, one entry per moment, with a ready question for the assistant."""
+        try:
+            hours = max(1.0, min(float(hours), 168.0))
+        except (TypeError, ValueError):
+            hours = 24.0
+        return self._cached(f"anomalies:{hours}", lambda: self._anomalies(hours), 60)
+
+    def _anomalies(self, hours: float) -> dict:
+        now = time.time()
+        events = []
+        for metric, r in report.state_anomalies(hours).items():
+            for e in ([] if "error" in r else r["events"]):
+                label, unit = ANOMALY_TEXT[metric]
+                events.append({"metric": metric, "label": label, "start": now - e["minutes_ago"] * 60, "started": e["started"],
+                               "minutes": e["duration_minutes"], "game": e["during_game"],
+                               "text": f"{label}: usually about {e['typical_value']:.0f}{unit}, up to {e['most_unusual_value']:.0f}{unit}"})
+        events.sort(key=lambda e: e["start"])
+        moments: list[list[dict]] = []
+        for e in events:                                   # memory and swap often move together: one moment, not three rows
+            if moments and e["start"] - moments[-1][0]["start"] <= 600:
+                moments[-1].append(e)
+            else:
+                moments.append([e])
+        periods = []
+        for m in moments:
+            first, minutes = m[0], max(e["minutes"] for e in m)
+            game = next((e["game"] for e in m if e["game"]), None)
+            what = " and ".join(dict.fromkeys(e["label"] for e in m if e["metric"] != "ram_used_mb" or len(m) == 1))
+            details = "; ".join(e["text"] for e in m)
+            question = (f"At {first['started']} the PC showed something unusual for about {minutes:.0f} minutes: {details}. "
+                        + (f"A game session ({game}) was recorded around then, so it may just be the game. " if game else
+                           "I was not doing anything unusual on the PC then. ")
+                        + f"Check what was going on at that time (use what_happened for {first['started']}), tell me what could explain it "
+                          "and whether I should worry. Say plainly what you could not find out.")
+            periods.append({"title": what or first["label"], "started": first["started"], "minutes": round(minutes), "start_ts": first["start"],
+                            "end_ts": first["start"] + minutes * 60, "details": [e["text"] for e in m], "during_game": game, "question": question})
+        return {"hours": hours, "periods": periods[::-1]}
 
     def report_html(self, hours: float = 24) -> str:
         hours = max(1.0, min(float(hours), 168.0))
@@ -566,6 +607,7 @@ class Handler(BaseHTTPRequestHandler):
             ("GET", "compare"): lambda: app.game_compare(q("a"), q("b")),
             ("GET", "batch"): lambda: app.game_batch(q("game"), q("batch")),
             ("GET", "programs"): lambda: app.programs(),
+            ("GET", "anomalies"): lambda: app.anomalies(q("hours", "24")),
             ("POST", "game_add"): lambda: app.game_add(body.get("process"), body.get("title")),
             ("POST", "game_remove"): lambda: app.game_remove(body.get("process")),
             ("POST", "game_record"): lambda: app.game_record(body.get("process")),

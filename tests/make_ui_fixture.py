@@ -4,11 +4,13 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+from pulse import db  # noqa: E402
 from test_games import _write_pm  # noqa: E402
 
 
@@ -17,6 +19,8 @@ def main() -> None:
     (root / "sessions").mkdir(parents=True, exist_ok=True)
     (root / "bench").mkdir(parents=True, exist_ok=True)
     subprocess.run([sys.executable, str(HERE.parent / "scripts" / "seed_fake.py"), "--out", str(root / "metrics.db")], check=True)
+    with db.connect(root / "metrics.db") as conn:                            # memory jumps for the last 45 minutes: an "unusual moment"
+        conn.execute("UPDATE system_metrics SET ram_percent = 96, ram_used_mb = 31000 WHERE ts > ?", (time.time() - 45 * 60,))
     shutil.copy(_write_pm([(30, 4, 3, 5)]), root / "sessions" / "cs2_20260919_120000.csv")
     for variant, frame_ms in (("base", 4), ("fsr3", 3)):                  # a batch "demo": fsr3 is faster than base
         for n in (1, 2):

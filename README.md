@@ -204,7 +204,9 @@ pulse ui            # opens the dashboard in your browser
 ```
 
 One window with tabs: overview (recording, Windows and Defender, autostart, processes, disks, and the report for the last
-6 hours, 24 hours, 3 days or 7 days; hover a chart to read the time and value of a point), Ask (the chat, with the tools it
+6 hours, 24 hours, 3 days or 7 days; hover a chart to read the time and value of every chart at that moment; click a
+table heading to sort it; stretches where memory, swap or GPU temperature were unusual are shaded on the charts and listed
+as "unusual moments", each with a button that asks the assistant what could explain it), Ask (the chat, with the tools it
 used; earlier chats stay in a list on the left and can be reopened, they are kept in `chats.json` next to the database),
 Findings (accept or forget), Timeline, Games (a library: open a game to see only its recordings), Setup (install or remove
 the three background jobs, Ollama status).

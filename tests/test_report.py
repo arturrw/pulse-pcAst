@@ -161,6 +161,15 @@ def test_sparse_samples_do_not_leave_holes_between_the_hover_columns():
     assert report.cells(24, 300) < report.cells(24, 30) == 360
 
 
+def test_unusual_stretches_are_shaded_on_the_charts_and_the_hover_label_says_so():
+    _db(samples=400, jump=80.0)
+    html = report.build_report(2)
+    assert html.count("class='band'") >= 1                                       # the RAM jump is shaded on the RAM chart
+    assert re.search(r"class='tip'.*?\d\d:\d\d · 80\.0 % · unusual<", html)
+    assert "class='sec-unusual'" in html and "body.embed .sec-unusual{display:none}" in html    # the page shows its own list instead
+    assert "th.sortable" in html and "aria-sort=ascending" in html
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

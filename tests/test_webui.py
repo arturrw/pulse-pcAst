@@ -469,6 +469,38 @@ def test_an_added_game_joins_the_games_that_already_have_recordings_by_name_igno
     assert len(games) == 1 and games[0]["tracked"] and games[0]["name"] == "My CS" and games[0]["runs"] == 2 and games[0]["sessions"] == 1
 
 
+def test_an_unusual_moment_comes_with_a_ready_question_for_the_assistant():
+    from test_report import _db as report_db
+    path = report_db(samples=400, jump=80.0)                                    # RAM sits near 50% and jumps to 80% for the last 15 minutes
+    app = webui.App(path)
+    d = app.anomalies(2)
+    assert d["periods"], "the RAM jump should be found"
+    p = d["periods"][0]
+    assert p["title"] == "Memory use" and p["started"] in p["question"] and "what_happened" in p["question"]
+    assert "I was not doing anything unusual" in p["question"] and p["end_ts"] > p["start_ts"] and p["minutes"] >= 3
+    assert app.anomalies("junk")["hours"] == 24.0 and app.anomalies(9999)["hours"] == 168.0
+    calm = webui.App(report_db(samples=400, jump=None)).anomalies(2)
+    assert calm["periods"] == []                                                # nothing unusual: no card, no button
+
+
+def test_a_moment_during_a_game_says_so_instead_of_claiming_the_user_was_idle():
+    from test_report import _db as report_db
+    app = webui.App(report_db(samples=400, jump=80.0))
+    real = webui.report.state_anomalies
+    def with_game(hours):
+        out = real(hours)
+        for r in out.values():
+            for e in r.get("events", []):
+                e["during_game"] = "cs2_20260919_120000"
+        return out
+    webui.report.state_anomalies = with_game
+    try:
+        p = app.anomalies(2)["periods"][0]
+    finally:
+        webui.report.state_anomalies = real
+    assert p["during_game"] and "may just be the game" in p["question"] and "not doing anything" not in p["question"]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -15,11 +15,15 @@ header{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:
 header h1{font-size:17px;margin:0;flex:1}header .dot{width:10px;height:10px;border-radius:50%;background:var(--mute)}
 button,select,input,textarea{font:inherit;color:inherit}
 select{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 8px}
-button{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}button:hover{border-color:var(--acc)}
+button{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer;transition:background-color .15s,border-color .15s,transform .12s,box-shadow .15s,opacity .15s}
+button:hover:not(:disabled){border-color:var(--acc);transform:translateY(-1px);box-shadow:0 3px 10px rgba(0,0,0,.16)}
+button:active:not(:disabled){transform:translateY(0) scale(.96);box-shadow:none;transition-duration:.05s}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,th:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 button.primary{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}button:disabled{opacity:.5;cursor:default}
-nav{display:flex;gap:4px;padding:8px 20px 0;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+nav{display:flex;gap:4px;padding:8px 20px 0;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap;position:relative}
+nav .ink{position:absolute;height:3px;border-radius:3px 3px 0 0;background:var(--acc);pointer-events:none;transition:left .28s cubic-bezier(.4,0,.2,1),width .28s cubic-bezier(.4,0,.2,1),top .28s cubic-bezier(.4,0,.2,1)}
 nav button{border:0;border-bottom:3px solid transparent;border-radius:6px 6px 0 0;background:none;padding:8px 14px}
-nav button.on{border-bottom-color:var(--acc);font-weight:600}
+nav button:hover:not(:disabled){transform:none;box-shadow:none;background:var(--chip)}nav button.on{font-weight:600}
 main{flex:1;overflow:auto;padding:18px 20px 40px;max-width:1100px;width:100%;margin:0 auto}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
@@ -29,9 +33,9 @@ main{flex:1;overflow:auto;padding:18px 20px 40px;max-width:1100px;width:100%;mar
 section{margin-top:22px}section>h2{font-size:15px;margin:0 0 8px}
 .item{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}
 .item .body{flex:1;min-width:0}.item .title{font-weight:600}.item .detail{color:var(--mute);font-size:13px;overflow-wrap:anywhere}
-iframe{display:block;width:100%;height:600px;border:0;background:transparent}
+iframe{display:block;width:100%;height:600px;border:0;background:transparent;opacity:0;transition:opacity .35s ease}iframe.ready{opacity:1}
 .askwrap{display:grid;grid-template-columns:230px 1fr;gap:16px;align-items:start}.convo{min-width:0}
-.chats{display:flex;flex-direction:column;gap:6px;position:sticky;top:0}.chatrow{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer}
+.chats{display:flex;flex-direction:column;gap:6px;position:sticky;top:0;min-width:0}.chatrow{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer}
 .chatrow:hover{border-color:var(--acc)}.chatrow.on{border-color:var(--acc);background:var(--chip)}.chatrow .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chatrow .x{border:0;background:none;padding:0 6px;color:var(--mute)}.chatrow .x:hover{color:var(--bad)}
 .vrow{display:grid;grid-template-columns:minmax(120px,1.2fr) 1fr 1fr minmax(130px,1.5fr);gap:2px 14px;padding:9px 0;border-bottom:1px solid var(--line);align-items:start}
@@ -46,16 +50,21 @@ iframe{display:block;width:100%;height:600px;border:0;background:transparent}
 textarea,input[type=text]{flex:1;min-width:180px;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
 table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}th{color:var(--mute);font-weight:500}
 code{background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anywhere}.chips button{font-size:13px}.err{color:var(--bad);margin:8px 0}
-.card.link{cursor:pointer}.card.link:hover{border-color:var(--acc)}.small{font-size:12px}
+.card.link,.gamecard{cursor:pointer;transition:transform .16s ease,border-color .16s,box-shadow .16s}.card.link:hover,.gamecard:hover{border-color:var(--acc);transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.18)}.card.link:active,.gamecard:active{transform:scale(.985)}.small{font-size:12px}
 .item.col{flex-direction:column;gap:0;padding:0}.item.col.done{opacity:.65}
 .head{display:flex;gap:12px;align-items:flex-start;padding:10px 14px;cursor:pointer;width:100%}.head.static{cursor:default}.head:hover{background:var(--chip);border-radius:10px}.head.static:hover{background:none}
 .head .body{flex:1;min-width:0}
-.more{display:none;padding:2px 14px 12px}.more.open{display:block}.explain p{margin:6px 0}.tech{margin:8px 0;font-family:ui-monospace,Consolas,monospace}
+.more{display:none;padding:2px 14px 12px}.more.open{display:block;animation:rise .22s ease both}.explain p{margin:6px 0}.tech{margin:8px 0;font-family:ui-monospace,Consolas,monospace}
 .grp{font-size:14px;margin:18px 0 8px;color:var(--mute)}
 .fields{padding:0 14px 12px;display:flex;flex-direction:column;gap:10px}.field{display:flex;flex-direction:column;gap:3px}.field>label{font-weight:600;font-size:13px}.field select,.field input[type=time]{align-self:flex-start;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 8px}
 .row.tight{margin:0}
-.upd{display:none;align-items:center;gap:12px;padding:8px 20px;background:var(--chip);border-bottom:1px solid var(--line)}.upd.show{display:flex}.upd .grow{flex:1}
+.upd{display:none;align-items:center;gap:12px;padding:8px 20px;background:var(--chip);border-bottom:1px solid var(--line)}.upd.show{display:flex;animation:drop .28s ease both}.upd .grow{flex:1}
 .verdict{font-size:22px;font-weight:700;margin:4px 0}.verdict.ok{color:var(--ok)}.verdict.warn{color:var(--warn)}.verdict.bad{color:var(--bad)}
+@keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+@keyframes drop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+#view>*{animation:rise .26s ease both}#view>*:nth-child(2){animation-delay:.04s}#view>*:nth-child(3){animation-delay:.08s}#view>*:nth-child(n+4){animation-delay:.12s}
+.msg{animation:rise .2s ease both}.chatrow,.item,.head{transition:background-color .15s,border-color .15s}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001ms!important;animation-delay:0s!important;transition-duration:.001ms!important}}
 </style></head><body>
 <header><span class="dot" id="dot"></span><h1>Pulse</h1></header>
 <div class="upd" id="upd"></div>
@@ -90,7 +99,19 @@ const SEV = { high: ["Serious", "bad"], medium: ["Worth a look", "warn"], low: [
 const sev = (s) => h("span", { class: "badge " + (SEV[s] || SEV.low)[1] }, (SEV[s] || SEV.low)[0]);
 
 function go(name) { tab = name; history.replaceState(null, "", "#" + name); show(); }
-function drawTabs() { $("tabs").replaceChildren(...TABS.map(([k, label]) => h("button", { class: k === tab ? "on" : "", onclick: () => go(k) }, label))); }
+function moveInk(animate) {
+  const nav = $("tabs"), on = nav.querySelector("button.on"), ink = nav.querySelector(".ink"); if (!on || !ink) return;
+  if (!animate) ink.style.transition = "none";
+  ink.style.left = on.offsetLeft + "px"; ink.style.width = on.offsetWidth + "px"; ink.style.top = on.offsetTop + on.offsetHeight - 3 + "px";
+  if (!animate) { ink.getBoundingClientRect(); ink.style.transition = ""; }
+}
+function drawTabs() {
+  const nav = $("tabs"); const first = !nav.querySelector("button");
+  if (first) nav.append(...TABS.map(([k, label]) => { const b = h("button", { onclick: () => go(k) }, label); b.dataset.tab = k; return b; }), h("span", { class: "ink" }));
+  nav.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  moveInk(!first);
+}
+window.addEventListener("resize", () => moveInk(false));
 function show() {
   drawTabs(); const mine = ++gen; fill(view(), h("p", { class: "mute" }, "Loading…"));
   const out = (...k) => { if (mine === gen) fill(view(), ...k); };
@@ -110,16 +131,65 @@ function explainBox(x) {
 // The report is a separate page shown inside this one; it is as tall as its content, so the page has the only scrollbar.
 const PERIODS = [[6, "Last 6 hours"], [24, "Last 24 hours"], [72, "Last 3 days"], [168, "Last 7 days"]];
 let period = 24; try { const p = +localStorage.getItem("pulse.period"); if (PERIODS.some((x) => x[0] === p)) period = p; } catch (e) {}
+
+// Tables of the report: click a heading to sort by that column (again to reverse). Dates, times, numbers and sizes sort as such.
+const UNITS = { B: 1, KB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12 };
+function sortValue(text) {
+  const t = text.trim(); let m;
+  if ((m = t.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/))) return { n: Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0)), t };
+  if ((m = t.match(/^(\d{1,2}):(\d{2})$/))) return { n: +m[1] * 60 + +m[2], t };
+  if ((m = t.match(/^(-?\d+(?:[.,]\d+)?)\s*(TB|GB|MB|KB|B)?(?![A-Za-z])/i))) { let n = parseFloat(m[1].replace(",", ".")); if (m[2]) n *= UNITS[m[2].toUpperCase()]; return { n, t }; }
+  return { n: null, t };
+}
+function makeSortable(doc) {
+  doc.querySelectorAll("table").forEach((table) => {
+    const head = table.rows[0]; if (!head || table.rows.length < 3 || ![...head.cells].every((c) => c.tagName === "TH")) return;
+    [...head.cells].forEach((th, col) => {
+      if (!th.textContent.trim()) return;
+      th.classList.add("sortable"); th.tabIndex = 0; th.setAttribute("role", "button");
+      const sort = () => {
+        const body = [...table.rows].slice(1); const cur = th.getAttribute("aria-sort");
+        const keyed = body.map((tr, i) => ({ tr, i, v: sortValue(tr.cells[col] ? tr.cells[col].textContent : "") }));
+        const numeric = keyed.every((k) => k.v.n !== null || k.v.t === "");
+        const dir = cur === "ascending" ? "descending" : cur === "descending" ? "ascending" : (numeric ? "descending" : "ascending");
+        [...head.cells].forEach((c) => c.removeAttribute("aria-sort")); th.setAttribute("aria-sort", dir);
+        const cmp = (x, y) => numeric ? (x.v.n ?? -Infinity) - (y.v.n ?? -Infinity) : x.v.t.localeCompare(y.v.t, undefined, { numeric: true, sensitivity: "base" });
+        keyed.sort((x, y) => (dir === "ascending" ? 1 : -1) * cmp(x, y) || x.i - y.i);
+        keyed.forEach((k) => k.tr.parentNode.appendChild(k.tr));
+      };
+      th.addEventListener("click", sort); th.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); sort(); } });
+    });
+  });
+}
+
+// Moments where the PC behaved unlike its own recent past. If the user was not doing anything then, the assistant looks into it.
+function unusualPart() {
+  const host = h("div", {});
+  const item = (p) => h("div", { class: "item" }, h("span", { class: "badge warn" }, "Unusual"),
+    h("div", { class: "body" }, h("div", { class: "title" }, p.title + " \u00b7 " + p.started + " \u00b7 " + p.minutes + " min"),
+      h("div", { class: "detail" }, p.details.join(" \u00b7 ") + (p.during_game ? " \u00b7 while " + p.during_game + " was running" : ""))),
+    h("button", { onclick: () => askAbout(p.question) }, "What could it be?"));
+  const load = async () => {
+    try {
+      const d = await api("anomalies?hours=" + period);
+      fill(host, d.periods.length ? h("section", {}, h("h2", {}, "Unusual moments"),
+        h("p", { class: "mute small" }, "Stretches where the PC did not behave like it did in the hours before, shaded on the charts below. Not a diagnosis: if you were not doing anything then, ask the assistant to look into it."),
+        d.periods.slice(0, 6).map(item)) : null);
+    } catch (e) { fill(host); }
+  };
+  return { host, load };
+}
+
 function reportPart() {
   const frame = h("iframe", { sandbox: "allow-same-origin", title: "report" });
-  const note = h("p", { class: "mute" }, "Loading the report…");
+  const note = h("p", { class: "mute" }, "Loading the report\u2026"); const un = unusualPart();
   const fit = () => { try { const b = frame.contentDocument && frame.contentDocument.body; if (b) frame.style.height = Math.ceil(b.getBoundingClientRect().height) + 4 + "px"; } catch (e) {} };
-  frame.addEventListener("load", () => { note.hidden = true; fit(); setTimeout(fit, 400); });
+  frame.addEventListener("load", () => { note.hidden = true; try { makeSortable(frame.contentDocument); } catch (e) {} fit(); setTimeout(fit, 400); frame.classList.add("ready"); });
   new ResizeObserver(fit).observe(frame);
-  const load = () => { note.hidden = false; frame.src = "/report?hours=" + period + "&embed=1"; };
+  const load = () => { note.hidden = false; frame.classList.remove("ready"); frame.src = "/report?hours=" + period + "&embed=1"; un.load(); };
   const sel = h("select", { onchange: () => { period = +sel.value; try { localStorage.setItem("pulse.period", String(period)); } catch (e) {} load(); } }, PERIODS.map(([v, label]) => h("option", { value: String(v) }, label)));
   sel.value = String(period); load();
-  return h("section", {}, h("div", { class: "row" }, h("h2", { style: "margin:0;flex:1" }, "Report"), sel), note, frame);
+  return h("div", {}, un.host, h("section", {}, h("div", { class: "row" }, h("h2", { style: "margin:0;flex:1" }, "Report"), sel), note, frame));
 }
 
 async function overview(out) {

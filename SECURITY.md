@@ -1,6 +1,6 @@
 # Security
 
-pc-ai-assistant reads local system information (process names and file paths, public addresses your programs connect
+Pulse reads local system information (process names and file paths, public addresses your programs connect
 to, disk and temperature history) into a database on your own machine. The tool itself sends nothing anywhere: its only
 network use is the local Ollama server you run yourself. (Windows may contact certificate servers on its own
 when it verifies a program's signature.)

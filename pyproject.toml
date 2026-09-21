@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/arturrw/pc-ai-assistant"
+Repository = "https://github.com/arturrw/pulse-pcAst"
 
 [project.scripts]
 pulse = "pulse.cli:main"

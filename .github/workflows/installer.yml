@@ -1,0 +1,43 @@
+name: installer
+
+# Builds the Windows installer (PyInstaller backend + Tauri shell) and keeps it as a downloadable artifact.
+# Run it by hand (Actions -> installer -> Run workflow) or by pushing a tag like v0.1.0.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - name: Backend (frozen with PyInstaller)
+        shell: bash
+        run: |
+          python -m pip install -e . pyinstaller
+          python -m PyInstaller packaging/pulse.spec --noconfirm --distpath build/dist --workpath build/work
+      - name: Desktop shell and installer
+        shell: bash
+        working-directory: desktop
+        run: |
+          npm ci
+          npx tauri build
+      - uses: actions/upload-artifact@v6
+        with:
+          name: Pulse-setup
+          path: desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error

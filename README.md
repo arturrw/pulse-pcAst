@@ -1,6 +1,6 @@
 # Pulse
 
-[![tests](https://github.com/arturrw/pc-ai-assistant/actions/workflows/tests.yml/badge.svg)](https://github.com/arturrw/pc-ai-assistant/actions/workflows/tests.yml)
+[![tests](https://github.com/arturrw/pulse-pcAst/actions/workflows/tests.yml/badge.svg)](https://github.com/arturrw/pulse-pcAst/actions/workflows/tests.yml)
 
 Local AI assistant that analyzes the state of your own computer. Everything runs locally
 (psutil + NVML for metrics, SQLite for storage, Ollama for the LLM). It only reads the state of your system: it

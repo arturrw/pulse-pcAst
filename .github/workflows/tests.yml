@@ -30,3 +30,45 @@ jobs:
             echo "== $f"
             python "$f" || exit 1
           done
+
+  interface:
+    # Opens the real app in headless Chrome (light and dark, wide and narrow) and checks every page: it renders, nothing
+    # sticks out sideways, no script error, and the interactive parts work. The screenshots are kept as an artifact.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: python -m pip install -e .
+      - name: Data for the check (synthetic history, one game with a benchmark batch, two chats)
+        run: python tests/make_ui_fixture.py ui-fixture
+      - name: Start the app
+        shell: bash
+        run: |
+          python -m pulse ui --db ui-fixture/metrics.db --no-browser --idle 0 --json-ready > ready.json &
+          for i in $(seq 1 60); do [ -s ready.json ] && break; sleep 1; done
+          cat ready.json
+      - name: Check every page
+        shell: bash
+        run: node tests/ui_smoke.mjs "$(python -c "import json;print(json.loads(open('ready.json').readline())['url'])")" ui-shots
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: ui-screenshots
+          path: ui-shots/*.png
+          if-no-files-found: ignore
+
+  shell:
+    # The desktop shell's own logic (which pages a pulse:// link may open).
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+      - run: cargo test --manifest-path desktop/src-tauri/Cargo.toml

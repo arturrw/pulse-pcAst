@@ -35,9 +35,9 @@ iframe{display:block;width:100%;height:600px;border:0;background:transparent}
 .chatrow:hover{border-color:var(--acc)}.chatrow.on{border-color:var(--acc);background:var(--chip)}.chatrow .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chatrow .x{border:0;background:none;padding:0 6px;color:var(--mute)}.chatrow .x:hover{color:var(--bad)}
 .vrow{display:grid;grid-template-columns:minmax(120px,1.2fr) 1fr 1fr minmax(130px,1.5fr);gap:2px 14px;padding:9px 0;border-bottom:1px solid var(--line);align-items:start}
-.vrow.head{color:var(--mute);font-weight:500;font-size:13px;padding:6px 0}.vrow .txt{grid-column:1/-1}
+.vrow .lbl{display:none}.vrow.head{color:var(--mute);font-weight:500;font-size:13px;padding:6px 0}.vrow .txt{grid-column:1/-1}
 .progs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.progs button{font-size:13px}.progs button.on{border-color:var(--acc)}.addgame .row{margin:8px 0}
-@media (max-width:640px){.vrow{grid-template-columns:1fr 1fr}.vrow.head{display:none}.vrow .nm{order:1}.vrow .res{order:2;justify-self:end}.vrow .av{order:3}.vrow .lo{order:4}.vrow .txt{order:5}}
+@media (max-width:640px){.vrow{grid-template-columns:1fr 1fr}.vrow.head{display:none}.vrow .nm{order:1}.vrow .res{order:2;justify-self:end}.vrow .av{order:3}.vrow .lo{order:4}.vrow .txt{order:5}.vrow .lbl{display:block}}
 .gamecard{cursor:pointer}.gamecard:hover{border-color:var(--acc)}.back{margin-bottom:6px}
 @media (max-width:760px){.askwrap{grid-template-columns:1fr}.chats{position:static}}
 .chat{display:flex;flex-direction:column;gap:10px;min-height:280px}.msg{max-width:85%;padding:9px 13px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -342,8 +342,8 @@ function gamePage(out, game, recs, d) {
         const d = await api("batch?game=" + encodeURIComponent(game.id) + "&batch=" + encodeURIComponent(b.tag));
         const rows = d.variants.map((v) => h("div", { class: "vrow" },
           h("div", { class: "nm" }, h("b", {}, v.variant), h("div", { class: "mute small" }, plural(v.runs, "run", "runs"))),
-          h("div", { class: "av" }, Math.round(v.avg_fps) + " FPS", h("div", { class: "mute small" }, v.reference ? "reference" : pct(v.avg_change))),
-          h("div", { class: "lo" }, Math.round(v.low1_fps) + " FPS", h("div", { class: "mute small" }, pct(v.low1_change))),
+          h("div", { class: "av" }, h("div", { class: "lbl mute small" }, "Average FPS"), Math.round(v.avg_fps) + " FPS", h("div", { class: "mute small" }, v.reference ? "reference" : pct(v.avg_change))),
+          h("div", { class: "lo" }, h("div", { class: "lbl mute small" }, "Worst 1% FPS"), Math.round(v.low1_fps) + " FPS", h("div", { class: "mute small" }, pct(v.low1_change))),
           h("div", { class: "res" }, h("span", { class: "badge " + v.tone }, v.verdict)),
           h("div", { class: "txt mute small" }, v.text)));
         const singles = h("div", { class: "more" });

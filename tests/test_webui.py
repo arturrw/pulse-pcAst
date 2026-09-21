@@ -340,6 +340,66 @@ def test_the_page_script_is_valid_javascript():
     assert res.returncode == 0, res.stderr[:400]
 
 
+def test_conversations_are_listed_reopened_continued_and_deleted():
+    client = FakeClient(answer="ok")
+    s = Running(client=client)
+    try:
+        first = s.api("POST", "ask", {"message": "first question"})[1]
+        assert first["title"] == "first question" and first["chat"]
+        s.api("POST", "reset", {})                                              # "New chat"
+        second = s.api("POST", "ask", {"message": "second"})[1]
+        assert second["chat"] != first["chat"]
+        assert [c["title"] for c in s.api("GET", "chats")[1]["chats"]] == ["second", "first question"]
+        opened = s.api("GET", "chat?id=" + first["chat"])[1]                   # switching back shows what was said
+        assert [m["who"] for m in opened["log"]] == ["me", "bot"]
+        s.api("POST", "ask", {"message": "more", "chat": first["chat"]})
+        assert client.seen[-1] == 4                                             # system + the earlier exchange + the new question
+        assert s.api("POST", "ask", {"message": "x", "chat": "nope"})[0] == 404
+        assert s.api("GET", "chat?id=nope")[0] == 404
+        assert s.api("POST", "chat_delete", {"id": second["chat"]})[1]["ok"] is True
+        assert s.api("GET", "chat?id=" + second["chat"])[0] == 404
+        assert s.api("POST", "chat_delete", {"id": 5})[0] == 404
+    finally:
+        s.stop()
+
+
+def test_a_saved_conversation_survives_a_restart_and_the_model_gets_its_context_back():
+    client = FakeClient(answer="42 GB")
+    s = Running(client=client)
+    try:
+        cid = s.api("POST", "ask", {"message": "how much space?"})[1]["chat"]
+        path = s.path
+    finally:
+        s.stop()
+    again = webui.App(path, client_factory=lambda: client)
+    assert [c["title"] for c in again.chat_list()["chats"]] == ["how much space?"]
+    again.ask("x", "and on D:?", cid)
+    assert client.seen[-1] == 4                                                 # rebuilt from the saved text, not lost
+    (path.parent / "chats.json").write_text("{not json", encoding="utf-8")
+    assert webui.App(path).chat_list() == {"chats": []}                         # a damaged file never breaks the app
+
+
+def test_games_are_grouped_into_a_library_by_program():
+    from test_game_tools import _data_dir
+    root = _data_dir()
+    other = (root / "sessions" / "cs2_20260919_120000.csv").read_text(encoding="utf-8").replace("cs2.exe,", "Hades2.exe,")
+    (root / "sessions" / "hades_1.csv").write_text(other, encoding="utf-8")
+    d = webui.App(root / "metrics.db").games()
+    lib = {g["id"]: g for g in d["games"]}
+    assert lib["cs2.exe"]["name"] == "Counter-Strike 2" and (lib["cs2.exe"]["sessions"], lib["cs2.exe"]["runs"]) == (1, 2)
+    assert lib["Hades2.exe"]["sessions"] == 1 and len(d["recordings"]) == 4
+
+
+def test_the_report_can_be_shown_inside_the_page_and_charts_have_hover_labels():
+    s = Running()
+    try:
+        _, _, plain = s.request("GET", "/report?hours=1")
+        _, _, embedded = s.request("GET", "/report?hours=1&embed=1")
+        assert b"<body>" in plain and b"<body class='embed'>" in embedded
+    finally:
+        s.stop()
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

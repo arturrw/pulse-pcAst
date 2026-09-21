@@ -1,4 +1,5 @@
 """Read-only tools the LLM can call. Docstrings double as the tool descriptions."""
+import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -253,6 +254,41 @@ def _find_recording(name: str) -> Path:
     return found[part[0]]
 
 
+KNOWN_GAMES = {"cs2.exe": "Counter-Strike 2", "csgo.exe": "Counter-Strike: Global Offensive", "dota2.exe": "Dota 2",
+               "valorant-win64-shipping.exe": "VALORANT", "fortniteclient-win64-shipping.exe": "Fortnite",
+               "r5apex.exe": "Apex Legends", "overwatch.exe": "Overwatch 2", "gta5.exe": "Grand Theft Auto V",
+               "eldenring.exe": "Elden Ring", "cyberpunk2077.exe": "Cyberpunk 2077", "witcher3.exe": "The Witcher 3",
+               "rocketleague.exe": "Rocket League", "bg3.exe": "Baldur's Gate 3", "bg3_dx11.exe": "Baldur's Gate 3",
+               "hogwartslegacy.exe": "Hogwarts Legacy", "league of legends.exe": "League of Legends"}
+_app_cache: dict[tuple, str] = {}
+
+
+def game_title(app: str) -> str:
+    """A readable name for a game's program: a known one, else the file name without .exe / -Win64-Shipping, spaced."""
+    known = KNOWN_GAMES.get(app.lower())
+    if known:
+        return known
+    stem = re.sub(r"(?i)\.exe$|[-_ ]win(64|32)[-_ ]shipping$", "", app)
+    stem = re.sub(r"(?i)[-_ ]win(64|32)[-_ ]shipping$", "", stem)
+    return re.sub(r"[-_]+", " ", stem).strip().title() or app
+
+
+def _application_of(path: Path) -> str:
+    """The program a PresentMon recording belongs to (the first column of its first row); cached per file version."""
+    st = path.stat()
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    if key not in _app_cache:
+        app = ""
+        try:
+            with open(path, "rb") as f:
+                f.readline()
+                app = f.readline().decode("utf-8", "replace").split(",")[0].strip()
+        except OSError:
+            pass
+        _app_cache[key] = app or "unknown"
+    return _app_cache[key]
+
+
 def game_sessions(limit: int = 10) -> list[dict]:
     """List recorded game sessions and benchmark runs (PresentMon), newest first, with the name to pass to
     game_session_report / game_sessions_compare. Use it first for any question about a game's FPS or lags.
@@ -262,7 +298,8 @@ def game_sessions(limit: int = 10) -> list[dict]:
     """
     found = sorted(_recordings().items(), key=lambda kv: kv[1].stat().st_mtime, reverse=True)
     out = [{"name": n, "recorded": time.strftime("%Y-%m-%d %H:%M", time.localtime(p.stat().st_mtime)),
-            "kind": "benchmark run" if p.parent.name == "bench" else "session"} for n, p in found[:int(limit)]]
+            "kind": "benchmark run" if p.parent.name == "bench" else "session", "game": _application_of(p)}
+           for n, p in found[:int(limit)]]
     return out or [{"error": "no recordings in data/sessions or data/bench; record one with scripts/record_presentmon.ps1"}]
 
 

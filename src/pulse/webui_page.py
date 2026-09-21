@@ -29,7 +29,13 @@ main{flex:1;overflow:auto;padding:18px 20px 40px;max-width:1100px;width:100%;mar
 section{margin-top:22px}section>h2{font-size:15px;margin:0 0 8px}
 .item{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}
 .item .body{flex:1;min-width:0}.item .title{font-weight:600}.item .detail{color:var(--mute);font-size:13px;overflow-wrap:anywhere}
-iframe{width:100%;height:1500px;border:1px solid var(--line);border-radius:12px;background:var(--card)}
+iframe{display:block;width:100%;height:600px;border:0;background:transparent}
+.askwrap{display:grid;grid-template-columns:230px 1fr;gap:16px;align-items:start}.convo{min-width:0}
+.chats{display:flex;flex-direction:column;gap:6px;position:sticky;top:0}.chatrow{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer}
+.chatrow:hover{border-color:var(--acc)}.chatrow.on{border-color:var(--acc);background:var(--chip)}.chatrow .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chatrow .x{border:0;background:none;padding:0 6px;color:var(--mute)}.chatrow .x:hover{color:var(--bad)}
+.gamecard{cursor:pointer}.gamecard:hover{border-color:var(--acc)}.back{margin-bottom:6px}
+@media (max-width:760px){.askwrap{grid-template-columns:1fr}.chats{position:static}}
 .chat{display:flex;flex-direction:column;gap:10px;min-height:280px}.msg{max-width:85%;padding:9px 13px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .msg.me{align-self:flex-end;background:var(--acc);color:var(--acc-ink)}.msg.bot{align-self:flex-start;background:var(--card);border:1px solid var(--line)}
 .tools{font-size:12px;color:var(--mute);margin-top:4px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:10px 0}
@@ -47,7 +53,7 @@ code{background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anyw
 .upd{display:none;align-items:center;gap:12px;padding:8px 20px;background:var(--chip);border-bottom:1px solid var(--line)}.upd.show{display:flex}.upd .grow{flex:1}
 .verdict{font-size:22px;font-weight:700;margin:4px 0}.verdict.ok{color:var(--ok)}.verdict.warn{color:var(--warn)}.verdict.bad{color:var(--bad)}
 </style></head><body>
-<header><span class="dot" id="dot"></span><h1>Pulse</h1><button id="quit">Quit</button></header>
+<header><span class="dot" id="dot"></span><h1>Pulse</h1></header>
 <div class="upd" id="upd"></div>
 <nav id="tabs"></nav><main id="view"></main>
 <script nonce="{{NONCE}}">
@@ -74,7 +80,7 @@ const view = () => $("view");
 const fill = (el, ...kids) => el.replaceChildren(...kids.flat().filter((k) => k != null && k !== false));
 const TABS = [["overview", "Overview"], ["ask", "Ask"], ["findings", "Findings"], ["timeline", "What happened"], ["games", "Games"], ["setup", "Setup"]];
 let tab = TABS.some((x) => x[0] === location.hash.slice(1)) ? location.hash.slice(1) : "overview";
-const chatLog = []; let pendingAsk = null; let gen = 0;
+let pendingAsk = null; let gen = 0;
 const err = (e) => h("p", { class: "err" }, String(e.message || e));
 const SEV = { high: ["Serious", "bad"], medium: ["Worth a look", "warn"], low: ["Minor", "mute"] };
 const sev = (s) => h("span", { class: "badge " + (SEV[s] || SEV.low)[1] }, (SEV[s] || SEV.low)[0]);
@@ -97,6 +103,15 @@ function explainBox(x) {
     x.ask ? h("div", { class: "row" }, h("button", { onclick: () => askAbout(x.ask) }, "Ask the assistant about this")) : null);
 }
 
+// The report is a separate page shown inside this one; it is as tall as its content, so the page has the only scrollbar.
+function reportFrame() {
+  const frame = h("iframe", { src: "/report?hours=24&embed=1", sandbox: "allow-same-origin", title: "report" });
+  const fit = () => { try { const b = frame.contentDocument && frame.contentDocument.body; if (b) frame.style.height = Math.ceil(b.getBoundingClientRect().height) + 4 + "px"; } catch (e) {} };
+  frame.addEventListener("load", () => { fit(); setTimeout(fit, 400); });
+  new ResizeObserver(fit).observe(frame);
+  return frame;
+}
+
 async function overview(out) {
   const s = await api("status"); const c = s.collector, w = s.windows, a = s.startup, p = s.processes;
   const card = (title, cls, big, small, to) => h("div", { class: "card link", onclick: () => go(to) }, h("h3", {}, title), h("div", { class: "big " + cls }, big), h("div", { class: "mute" }, small));
@@ -110,27 +125,47 @@ async function overview(out) {
       p.available ? card("Running programs", p.flagged ? "bad" : "ok", p.flagged ? p.flagged + " look unusual" : "Nothing unusual", "", "findings") : null,
       s.disk ? card("Disk space", s.disk.free_gb < 30 ? "bad" : "ok", Math.round(s.disk.free_gb) + " GB free", "on " + s.disk.name, "setup") : null,
       h("div", { class: "card link", onclick: () => go("setup") }, h("h3", {}, "Background helpers"), h("div", {}, jobs))),
-    h("section", {}, h("h2", {}, "Report (last 24 hours)"), h("iframe", { src: "/report?hours=24", sandbox: "", title: "report" })));
+    h("section", {}, h("h2", {}, "Report (last 24 hours)"), reportFrame()));
 }
 
+let chatId = null;   // the open conversation (null = a new one, created when the first question is sent)
 async function ask(out) {
   const st = (await api("setup")).ollama;
   const log = h("div", { class: "chat" }); const input = h("textarea", { rows: "2", placeholder: "Ask something…" }); const btn = h("button", { class: "primary" }, "Send");
+  const side = h("div", { class: "chats" });
   const add = (who, text, used) => { const m = h("div", { class: "msg " + who }, text); log.append(used && used.length ? h("div", {}, m, h("div", { class: "tools" }, "checked: " + used.join(", "))) : m); return m; };
-  chatLog.forEach((m) => add(m.who, m.text, m.used));
+  const drawList = async () => {
+    const d = await api("chats");
+    fill(side, h("button", { class: "primary", onclick: () => open(null) }, "+ New chat"), d.chats.map((c) => {
+      const x = h("button", { class: "x", title: "Delete this chat" }, "×");
+      x.addEventListener("click", async (e) => { e.stopPropagation();
+        if (!x.dataset.sure) { x.dataset.sure = "1"; x.textContent = "Delete?"; return; }
+        try { await api("chat_delete", { id: c.id }); } catch (er) {}
+        if (c.id === chatId) await open(null); else await drawList(); });
+      return h("div", { class: "chatrow" + (c.id === chatId ? " on" : ""), title: c.title, onclick: () => { if (c.id !== chatId) open(c.id); } }, h("span", { class: "t" }, c.title), x);
+    }));
+  };
+  async function open(id) {
+    chatId = id; fill(log);
+    if (id) { try { const c = await api("chat?id=" + encodeURIComponent(id)); c.log.forEach((m) => add(m.who, m.text, m.used)); } catch (e) { chatId = null; } }
+    else await api("reset", {});
+    await drawList(); input.focus();
+  }
   async function send(text) {
-    text = (text || input.value).trim(); if (!text) return; input.value = ""; add("me", text); chatLog.push({ who: "me", text });
+    text = (text || input.value).trim(); if (!text) return; input.value = ""; add("me", text);
     btn.disabled = true; const wait = add("bot", "Thinking…");
-    try { const r = await api("ask", { message: text }); wait.remove(); add("bot", r.answer, r.tools); chatLog.push({ who: "bot", text: r.answer, used: r.tools }); }
+    try { const r = await api("ask", { message: text, chat: chatId }); wait.remove(); add("bot", r.answer, r.tools); chatId = r.chat; await drawList(); }
     catch (e) { wait.remove(); log.append(err(e)); }
     btn.disabled = false; input.focus();
   }
   btn.addEventListener("click", () => send()); input.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
   out(h("p", { class: "mute" }, "Ask about this PC in your own words: load, disks, temperature, programs, antivirus, game FPS. The assistant only reads, it changes nothing."),
     st.running && st.model_ready ? null : h("p", { class: "err" }, st.hint),
-    h("div", { class: "row chips" }, ["How much free space do I have?", "Was anything unusual in the last day?", "Is my antivirus on?", "What starts by itself?"].map((x) => h("button", { onclick: () => send(x) }, x))), log,
-    h("div", { class: "row" }, input, btn, h("button", { onclick: async () => { await api("reset", {}); chatLog.length = 0; ask(out); } }, "New chat")));
-  if (pendingAsk) { const q = pendingAsk; pendingAsk = null; send(q); }
+    h("div", { class: "askwrap" }, side, h("div", { class: "convo" },
+      h("div", { class: "row chips" }, ["How much free space do I have?", "Was anything unusual in the last day?", "Is my antivirus on?", "What starts by itself?"].map((x) => h("button", { onclick: () => send(x) }, x))), log,
+      h("div", { class: "row" }, input, btn))));
+  if (pendingAsk) { const q = pendingAsk; pendingAsk = null; chatId = null; await api("reset", {}); await drawList(); send(q); }
+  else if (chatId) await open(chatId); else await drawList();
 }
 
 // ---- findings
@@ -206,11 +241,26 @@ async function timeline(out) {
   run();
 }
 
-// ---- games
+// ---- games: a library of games; opening one shows only its own recordings
+let gameOpen = null;
 async function games(out) {
-  const d = await api("games"); const recs = d.recordings.filter((r) => !r.error); let all = false; const list = h("div", {});
+  const d = await api("games"); const recs = d.recordings.filter((r) => !r.error);
+  if (!recs.length) return out(h("p", { class: "mute" }, "How your games ran."), h("div", { class: "card" }, h("p", {}, "No game recordings yet."), h("p", { class: "mute" }, "Record a game with PresentMon (see the README) and it will show up here.")));
+  const game = d.games.find((g) => g.id === gameOpen);
+  if (!game) { gameOpen = null; return library(out, d.games); }
+  gamePage(out, game, recs.filter((r) => r.game === game.id));
+}
+function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
+function library(out, list) {
+  out(h("p", { class: "mute" }, "Your games. Open one to see how it ran, in plain words."),
+    h("div", { class: "grid" }, list.map((g) => h("div", { class: "card gamecard", onclick: () => { gameOpen = g.id; go("games"); } },
+      h("div", { class: "big" }, g.name),
+      h("div", { class: "mute" }, [g.sessions ? plural(g.sessions, "play session", "play sessions") : null, g.runs ? plural(g.runs, "benchmark run", "benchmark runs") : null].filter(Boolean).join(" · ")),
+      h("div", { class: "mute small" }, "Last recorded " + g.last)))));
+}
+function gamePage(out, game, recs) {
   const numbers = (r) => h("div", { class: "grid" }, r.numbers.map((n) => h("div", { class: "card" }, h("h3", {}, n.label), h("div", { class: "big" }, String(n.value)), h("div", { class: "mute small" }, n.hint))));
-  async function open(rec, host) {
+  async function openRec(rec, host) {
     fill(host, h("p", { class: "mute" }, "Analysing…"));
     try {
       const r = await api("game?name=" + encodeURIComponent(rec.name));
@@ -223,14 +273,26 @@ async function games(out) {
         recs.length > 1 ? h("div", { class: "row" }, other) : null, cmp);
     } catch (e) { fill(host, err(e)); }
   }
-  const draw = () => fill(list, (all ? recs : recs.slice(0, 8)).map((r) => {
-    const host = h("div", { class: "more" });
-    return h("div", { class: "item col" }, h("div", { class: "head", onclick: () => { const on = host.classList.toggle("open"); if (on && !host.dataset.done) { host.dataset.done = "1"; open(r, host); } } },
-      h("div", { class: "body" }, h("div", { class: "title" }, r.name), h("div", { class: "detail" }, r.recorded + " · " + (r.kind === "session" ? "play session" : "benchmark run"))), h("span", { class: "mute" }, "▾")), host);
-  }), !all && recs.length > 8 ? h("button", { onclick: () => { all = true; draw(); } }, "Show all " + recs.length) : null);
-  out(h("p", { class: "mute" }, "How your games ran. Click a recording to see whether it was smooth, in plain words."),
-    recs.length ? list : h("div", { class: "card" }, h("p", {}, "No game recordings yet."), h("p", { class: "mute" }, "Record a game with PresentMon (see the README) and it will show up here.")));
-  if (recs.length) draw();
+  const row = (r) => {
+    const host = h("div", { class: "more" }); const toggle = () => { const on = host.classList.toggle("open"); if (on && !host.dataset.done) { host.dataset.done = "1"; openRec(r, host); } };
+    return { el: h("div", { class: "item col" }, h("div", { class: "head", onclick: toggle }, h("div", { class: "body" }, h("div", { class: "title" }, r.name), h("div", { class: "detail" }, r.recorded)), h("span", { class: "mute" }, "▾")), host), toggle };
+  };
+  const group = (title, items, blurb) => {
+    if (!items.length) return null;
+    let all = false; const box = h("div", {});
+    const draw = () => fill(box, (all ? items : items.slice(0, 6)).map((r) => row(r).el), !all && items.length > 6 ? h("button", { onclick: () => { all = true; draw(); } }, "Show all " + items.length) : null);
+    draw();
+    return h("section", {}, h("h2", {}, title + " (" + items.length + ")"), h("p", { class: "mute small" }, blurb), box);
+  };
+  const sessions = recs.filter((r) => r.kind !== "benchmark run"), runs = recs.filter((r) => r.kind === "benchmark run");
+  const latest = h("div", {});
+  out(h("button", { class: "back", onclick: () => { gameOpen = null; go("games"); } }, "← All games"),
+    h("h2", { style: "margin:8px 0 2px;font-size:20px" }, game.name),
+    h("p", { class: "mute" }, [plural(recs.length, "recording", "recordings"), "last one " + recs[0].recorded].join(" · ")),
+    h("section", {}, h("h2", {}, "Latest recording"), h("p", { class: "mute small" }, recs[0].name), latest),
+    group("Play sessions", sessions, "Normal play, recorded while you played."),
+    group("Benchmark runs", runs, "Repeated test runs of the same scene, for comparing settings."));
+  openRec(recs[0], latest);
 }
 
 // ---- setup
@@ -293,7 +355,6 @@ async function checkUpdate() {
 }
 checkUpdate(); setInterval(checkUpdate, 6 * 3600 * 1000);
 
-$("quit").addEventListener("click", async () => { try { await api("quit", {}); } catch (e) {} document.body.replaceChildren(h("p", { class: "mute", style: "padding:24px" }, "Pulse has stopped. You can close this window.")); });
 async function beat() { try { const st = await api("status"); $("dot").style.background = st.collector.recording ? "var(--ok)" : "var(--bad)"; } catch (e) {} }
 setInterval(() => { api("ping", {}).catch(() => {}); }, 15000); api("ping", {}).catch(() => {}); beat(); setInterval(beat, 60000);
 show();

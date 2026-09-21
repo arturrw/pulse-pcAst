@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ack, alerts, chat, db, digest, explain, report, settings, setup_tasks, tools
+from . import ack, alerts, chat, chatstore, db, digest, explain, report, settings, setup_tasks, tools
 from .webui_page import render_page
 
 MAX_BODY = 16 * 1024
@@ -50,7 +50,9 @@ class App:
         self._cache: dict[str, tuple[float, object]] = {}
         self._lock = threading.Lock()
         self._refreshing: set[str] = set()
-        self._sessions: dict[str, list] = {}
+        self._sessions: dict[str, list] = {}       # what the model sees, per chat
+        self.chats = chatstore.ChatStore(self.db_path.parent / "chats.json")
+        self._current: str | None = None            # the chat a request without an id continues
         tools.set_db(self.db_path)
 
     # ---- small cache: the Windows checks take a couple of seconds each
@@ -216,7 +218,15 @@ class App:
         return result
 
     def games(self) -> dict:
-        return {"recordings": tools.game_sessions(30)}
+        """The library: every recording, and the games they belong to (newest played first)."""
+        recs = tools.game_sessions(1000)
+        good = [r for r in recs if "error" not in r]
+        library: dict[str, dict] = {}
+        for r in good:                                   # newest first, so the first one seen is the last played
+            g = library.setdefault(r["game"], {"id": r["game"], "name": tools.game_title(r["game"]), "sessions": 0,
+                                               "runs": 0, "last": r["recorded"]})
+            g["runs" if r["kind"] == "benchmark run" else "sessions"] += 1
+        return {"recordings": recs, "games": list(library.values())}
 
     def game_report(self, name) -> dict:
         r = tools.game_session_report(_clean_id(name, "name"))
@@ -238,16 +248,32 @@ class App:
 
         return ollama.Client()
 
-    def ask(self, session: str, message) -> dict:
+    def _history(self, cid: str) -> list:
+        """The model's context of a chat: kept in memory, rebuilt from the saved text after a restart."""
+        if cid not in self._sessions:
+            past = [{"role": "user" if m["who"] == "me" else "assistant", "content": m["text"]}
+                    for m in (self.chats.get(cid) or {"log": []})["log"]]
+            self._sessions[cid] = [{"role": "system", "content": chat.SYSTEM_PROMPT}] + past[-KEEP_MESSAGES:]
+        return self._sessions[cid]
+
+    def ask(self, session: str, message, chat_id=None) -> dict:
         if not isinstance(message, str) or not message.strip():
             raise ApiError("empty message")
         message = message.strip()[:MAX_MESSAGE]
+        if chat_id is not None and not (isinstance(chat_id, str) and self.chats.exists(chat_id)):
+            raise ApiError("no such chat", 404)
         status = self._cached("ollama", lambda: setup_tasks.ollama_status(self.model, self._client_factory), 20)
         if not status["running"] or not status["model_ready"]:
             raise ApiError(status["hint"] or "the model is not available", 503)
         with self._lock:
-            history = self._sessions.setdefault(session, [{"role": "system", "content": chat.SYSTEM_PROMPT}])
+            cid = chat_id or (self._current if self._current and self.chats.exists(self._current) else None)
+        if cid is None:
+            cid = self.chats.create()
+        with self._lock:
+            self._current = cid
+            history = self._history(cid)
             history.append({"role": "user", "content": message})
+        title = self.chats.add(cid, "me", message)
         used: list[str] = []
         try:
             answer = chat.ask(self._client(), self.model, history, False, 8192, on_tool=lambda n, a: used.append(n))
@@ -255,11 +281,33 @@ class App:
             raise ApiError(f"the model failed: {type(e).__name__}: {e}"[:300], 502) from None
         with self._lock:
             del history[1:-KEEP_MESSAGES]            # the system prompt stays, the conversation is trimmed
-        return {"answer": answer, "tools": used}
+        self.chats.add(cid, "bot", answer, used)
+        return {"answer": answer, "tools": used, "chat": cid, "title": title}
 
     def reset_chat(self, session: str) -> dict:
+        """A request without a chat id starts a new conversation next time; the old one stays in the list."""
         with self._lock:
-            self._sessions.pop(session, None)
+            self._current = None
+        return {"ok": True}
+
+    def chat_list(self) -> dict:
+        return {"chats": self.chats.listing()}
+
+    def chat_open(self, chat_id) -> dict:
+        c = self.chats.get(chat_id) if isinstance(chat_id, str) else None
+        if c is None:
+            raise ApiError("no such chat", 404)
+        with self._lock:
+            self._current = c["id"]
+        return c
+
+    def chat_delete(self, chat_id) -> dict:
+        if not (isinstance(chat_id, str) and self.chats.delete(chat_id)):
+            raise ApiError("no such chat", 404)
+        with self._lock:
+            self._sessions.pop(chat_id, None)
+            if self._current == chat_id:
+                self._current = None
         return {"ok": True}
 
     # ---- setup
@@ -398,6 +446,8 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 hours = 24.0
             html = self.server.app.report_html(hours)
+            if (query.get("embed") or [""])[0] == "1":
+                html = html.replace("<body>", "<body class='embed'>", 1)     # shown inside the app page
             self._send(200, html.encode("utf-8"), "text/html; charset=utf-8",
                        csp="default-src 'none'; style-src 'unsafe-inline'; img-src data:; frame-ancestors 'self'")
             return
@@ -442,7 +492,10 @@ class Handler(BaseHTTPRequestHandler):
             ("GET", "timeline"): lambda: app.timeline(q("when", "now"), q("minutes", "30")),
             ("GET", "setup"): lambda: app.setup(),
             ("POST", "ping"): lambda: self.server.touch() or {"ok": True},
-            ("POST", "ask"): lambda: app.ask(sid, body.get("message")),
+            ("GET", "chats"): lambda: app.chat_list(),
+            ("GET", "chat"): lambda: app.chat_open(q("id")),
+            ("POST", "ask"): lambda: app.ask(sid, body.get("message"), body.get("chat")),
+            ("POST", "chat_delete"): lambda: app.chat_delete(body.get("id")),
             ("POST", "reset"): lambda: app.reset_chat(sid),
             ("POST", "ack"): lambda: app.acknowledge(body.get("id"), body.get("note")),
             ("POST", "forget"): lambda: app.forget(body.get("id")),

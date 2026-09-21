@@ -62,6 +62,17 @@ def test_compare_reports_percent_change():
     assert "error" in tools.game_sessions_compare("t_base_1", "nope")
 
 
+def test_recordings_know_their_game_and_get_a_readable_title():
+    root = _data_dir()
+    other = (root / "sessions" / "cs2_20260919_120000.csv").read_text(encoding="utf-8").replace("cs2.exe,", "Hades2.exe,")
+    (root / "sessions" / "hades_1.csv").write_text(other, encoding="utf-8")
+    games = {r["name"]: r["game"] for r in tools.game_sessions(10)}
+    assert games["t_base_1"] == "cs2.exe" and games["hades_1"] == "Hades2.exe"
+    assert tools.game_title("cs2.exe") == "Counter-Strike 2"
+    assert tools.game_title("FortniteClient-Win64-Shipping.exe") == "Fortnite"
+    assert tools.game_title("some_new_game.exe") == "Some New Game"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

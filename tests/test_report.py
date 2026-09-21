@@ -120,6 +120,14 @@ def test_chart_axes_never_go_below_zero_for_percent():
     assert labels and min(labels) >= 0
 
 
+def test_every_chart_sample_has_a_hover_label_with_time_and_value():
+    _db(samples=100)
+    html = report.build_report(2)
+    assert html.count("class='pt'") >= 4 * 50                       # one hoverable column per plotted sample, in all four charts
+    assert re.search(r"class='tip'.*?>\d\d:\d\d · 55\.0 °C<", html)  # the label carries the time and the value with its unit
+    assert "<script" not in html                                     # done with CSS only: the report still runs no script
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

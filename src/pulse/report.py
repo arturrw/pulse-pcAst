@@ -16,11 +16,18 @@ STYLE = """
 :root{--bg:#f7f7f5;--card:#fff;--ink:#1c1c1a;--mute:#6b6b66;--line:#2f6fdb;--grid:#e3e3de;--warn:#b25b00;--ok:#2a7d46}
 @media (prefers-color-scheme:dark){:root{--bg:#161615;--card:#1f1f1d;--ink:#ecece8;--mute:#9a9a94;--line:#6ea0ff;--grid:#33332f;--warn:#ffb15c;--ok:#5fcf8b}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,Segoe UI,sans-serif}
-main{max-width:800px;margin:0 auto;padding:20px 16px 40px}h1{font-size:22px;margin:0 0 2px}h2{font-size:17px;margin:26px 0 8px}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 40px}h1{font-size:22px;margin:0 0 2px}h2{font-size:17px;margin:26px 0 8px}
 .mute{color:var(--mute)}section{background:var(--card);border-radius:10px;padding:12px 16px;margin-top:12px}
 table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:4px 10px 4px 0;border-bottom:1px solid var(--grid);font-variant-numeric:tabular-nums}
 th{color:var(--mute);font-weight:500}svg{width:100%;height:auto;display:block}.warn{color:var(--warn)}.ok{color:var(--ok)}
 svg text{fill:var(--mute);font-size:11px}svg .g{stroke:var(--grid)}svg .l{fill:none;stroke:var(--line);stroke-width:1.6;stroke-linejoin:round}
+td,th{overflow-wrap:anywhere;vertical-align:top}section{overflow-wrap:anywhere}
+/* hover on a chart: a guide line, a dot and a label with the time and the value (no script needed) */
+svg .hit{fill:transparent}svg .cur,svg .dot,svg .tip{display:none;pointer-events:none}svg .cur{stroke:var(--mute);stroke-dasharray:3 3}svg .dot{fill:var(--line)}
+svg .tip rect{fill:var(--ink)}svg .tip text{fill:var(--card);font-size:12px}
+svg .pt:hover .cur,svg .pt:hover .dot,svg .pt:hover .tip{display:block}
+/* shown inside the app: no second background and no narrow column, the app page already provides them */
+body.embed{background:transparent}body.embed main{max-width:none;padding:0 0 24px}body.embed h1{display:none}body.embed section{background:var(--card);border:1px solid var(--grid);border-radius:12px}
 """
 
 
@@ -94,6 +101,19 @@ def chart(metric: str, title: str, unit: str, hours: float, now: float) -> str:
             parts.append(f"<circle cx='{x(seg[0][0]):.1f}' cy='{y(seg[0][1]):.1f}' r='1.6' fill='var(--line)'/>")
         else:
             parts.append("<polyline class='l' points='" + " ".join(f"{x(t):.1f},{y(v):.1f}" for t, v in seg) + "'/>")
+    long = hours > 24
+    xs = [x(t) for t, _ in pts]
+    for i, (t, v) in enumerate(pts):   # one invisible column per sample: hovering it shows that sample
+        left = max(xs[i] - (xs[i] - xs[i - 1]) / 2, xs[i] - 5) if i else xs[i] - 5
+        right = min(xs[i] + (xs[i + 1] - xs[i]) / 2, xs[i] + 5) if i < len(pts) - 1 else xs[i] + 5
+        label = f"{_clock(t, '%d %b %H:%M' if long else '%H:%M')} · {v:.1f} {unit}"
+        bw = 7 * len(label) + 12
+        bx = min(max(xs[i] - bw / 2, PAD_L), W - PAD_R - bw)
+        parts.append(f"<g class='pt'><rect class='hit' x='{left:.1f}' y='{PAD_T}' width='{max(right - left, 1):.1f}' height='{H - PAD_T - PAD_B}'/>"
+                     f"<line class='cur' x1='{xs[i]:.1f}' x2='{xs[i]:.1f}' y1='{PAD_T}' y2='{H - PAD_B}'/>"
+                     f"<circle class='dot' cx='{xs[i]:.1f}' cy='{y(v):.1f}' r='3.5'/>"
+                     f"<g class='tip'><rect x='{bx:.1f}' y='{PAD_T}' width='{bw}' height='20' rx='5'/>"
+                     f"<text x='{bx + bw / 2:.1f}' y='{PAD_T + 14}' text-anchor='middle'>{escape(label)}</text></g></g>")
     parts.append("</svg>")
     return f"<h2>{escape(title)} <span class='mute'>({escape(unit)})</span></h2>" + "".join(parts)
 

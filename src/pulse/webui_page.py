@@ -275,9 +275,12 @@ async function setup(out) {
 
 // Updates: only inside the desktop app (the shell checks for a signed release and installs it).
 const shell = window.__TAURI_INTERNALS__;
+let updTry = 0;
 async function checkUpdate() {
   if (!shell) return;
-  let u = null; try { u = await shell.invoke("check_update"); } catch (e) { return; }
+  let u = null;
+  try { u = await shell.invoke("check_update"); updTry = 0; }
+  catch (e) { if (updTry < 3) setTimeout(checkUpdate, [60, 300, 900][updTry++] * 1000); return; }   // no network yet (autostart at logon): try again soon
   const box = $("upd");
   if (!u) { box.classList.remove("show"); return; }
   const later = h("button", { onclick: () => box.classList.remove("show") }, "Later");

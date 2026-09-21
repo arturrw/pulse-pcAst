@@ -16,7 +16,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ack, alerts, chat, chatstore, db, digest, explain, report, settings, setup_tasks, tools
+from . import ack, alerts, chat, chatstore, db, digest, explain, games, report, settings, setup_tasks, tools
 from .webui_page import render_page
 
 MAX_BODY = 16 * 1024
@@ -227,6 +227,28 @@ class App:
                                                "runs": 0, "last": r["recorded"]})
             g["runs" if r["kind"] == "benchmark run" else "sessions"] += 1
         return {"recordings": recs, "games": list(library.values())}
+
+    def game_batch(self, game, batch) -> dict:
+        """One batch of benchmark runs: every variant with its repeats averaged, and what it did against the reference."""
+        game, batch = _clean_id(game, "game"), _clean_id(batch, "batch")
+        runs = [r for r in tools.game_sessions(1000) if "error" not in r and r["game"] == game and r["kind"] == "benchmark run"
+                and r.get("batch") == batch]
+        if not runs:
+            raise ApiError("no such batch", 404)
+        groups: dict[str, list[dict]] = {}
+        for r in sorted(runs, key=lambda r: r["name"]):
+            try:
+                groups.setdefault(r["variant"], []).append(tools.run_stats(r["name"]))
+            except (OSError, ValueError):
+                continue                                  # an unreadable run is left out, the others still count
+        rows = games.variant_table(groups)
+        if not rows:
+            raise ApiError("these runs could not be read", 422)
+        ref = rows[0]
+        for r in rows:
+            r.update(explain.variant_verdict(r, ref))
+        return {"batch": batch, "reference": ref["variant"], "variants": tools._round_deep(rows),
+                "note": "Each variant is the average of its repeats. Differences smaller than the spread between repeats are noise."}
 
     def game_report(self, name) -> dict:
         r = tools.game_session_report(_clean_id(name, "name"))
@@ -489,6 +511,7 @@ class Handler(BaseHTTPRequestHandler):
             ("GET", "games"): lambda: app.games(),
             ("GET", "game"): lambda: app.game_report(q("name")),
             ("GET", "compare"): lambda: app.game_compare(q("a"), q("b")),
+            ("GET", "batch"): lambda: app.game_batch(q("game"), q("batch")),
             ("GET", "timeline"): lambda: app.timeline(q("when", "now"), q("minutes", "30")),
             ("GET", "setup"): lambda: app.setup(),
             ("POST", "ping"): lambda: self.server.touch() or {"ok": True},

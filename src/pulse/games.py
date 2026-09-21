@@ -351,6 +351,28 @@ def format_compare(a: dict, b: dict) -> str:
     return "\n".join(lines)
 
 
+def variant_table(groups: dict[str, list[dict]], reference: str | None = None) -> list[dict]:
+    """One row per variant from the frame statistics of its repeats: the mean of each number, the spread of the average
+    FPS over the repeats (how much one run differs from the next) and the change against the reference variant
+    ("base" when there is one, else the first)."""
+    if not groups:
+        return []
+    ref = reference if reference in groups else ("base" if "base" in groups else next(iter(groups)))
+    mean = lambda fs, k: sum(f[k] for f in fs) / len(fs)
+    rows = {}
+    for v, fs in groups.items():
+        avg = [f["avg_fps"] for f in fs]
+        rows[v] = {"variant": v, "runs": len(fs), "avg_fps": mean(fs, "avg_fps"), "spread": max(avg) - min(avg),
+                   "low1_fps": mean(fs, "low1_fps"), "low01_fps": mean(fs, "low01_fps"), "p99_ms": mean(fs, "p99_ms")}
+    base = rows[ref]
+    pct = lambda a, b: 100 * (a / b - 1) if b else None
+    for v, r in rows.items():
+        r["reference"] = v == ref
+        r["avg_change"] = None if v == ref else pct(r["avg_fps"], base["avg_fps"])
+        r["low1_change"] = None if v == ref else pct(r["low1_fps"], base["low1_fps"])
+    return [rows[ref]] + [r for v, r in rows.items() if v != ref]
+
+
 def summarize_runs(paths, process: str | None = None, by_slice: bool = False) -> str:
     """Table of repeated runs grouped by variant. File names are <tag>_<variant>_<n>.csv;
     the spread (max - min over repeats) shows whether a difference between variants is real."""

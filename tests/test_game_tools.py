@@ -73,6 +73,15 @@ def test_recordings_know_their_game_and_get_a_readable_title():
     assert tools.game_title("some_new_game.exe") == "Some New Game"
 
 
+def test_benchmark_names_split_into_batch_and_variant():
+    assert tools.split_run_name("0919_1546_base_1") == ("0919_1546", "base")
+    assert tools.split_run_name("combo_fsr3ShadowShaderL_3") == ("combo", "fsr3ShadowShaderL")
+    assert tools.split_run_name("dust2_test") == (None, None) and tools.split_run_name("trial") == (None, None)
+    rows = {r["name"]: r for r in (_data_dir() and tools.game_sessions(10))}
+    assert rows["t_base_1"]["batch"] == "t" and rows["t_base_1"]["variant"] == "base"
+    assert "batch" not in rows["cs2_20260919_120000"]                      # play sessions are not batches
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

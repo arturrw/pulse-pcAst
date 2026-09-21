@@ -261,6 +261,26 @@ KNOWN_GAMES = {"cs2.exe": "Counter-Strike 2", "csgo.exe": "Counter-Strike: Globa
                "rocketleague.exe": "Rocket League", "bg3.exe": "Baldur's Gate 3", "bg3_dx11.exe": "Baldur's Gate 3",
                "hogwartslegacy.exe": "Hogwarts Legacy", "league of legends.exe": "League of Legends"}
 _app_cache: dict[tuple, str] = {}
+_RUN_NAME = re.compile(r"^(.+)_([^_]+)_(\d+)$")     # <batch>_<variant>_<repeat>, as scripts/bench_batch.ps1 writes them
+_stats_cache: dict[tuple, dict] = {}
+
+
+def split_run_name(name: str) -> tuple[str | None, str | None]:
+    """(batch, variant) of a benchmark run named <batch>_<variant>_<n>, else (None, None)."""
+    m = _RUN_NAME.match(name)
+    return (m.group(1), m.group(2)) if m else (None, None)
+
+
+def run_stats(name: str) -> dict:
+    """The frame statistics of one recording, remembered per file version (an analysis takes about half a second)."""
+    path = _find_recording(name)
+    st = path.stat()
+    key = (str(path), st.st_mtime_ns, st.st_size)
+    if key not in _stats_cache:
+        from . import games
+
+        _stats_cache[key] = games.analyze(path)["frames"]
+    return _stats_cache[key]
 
 
 def game_title(app: str) -> str:
@@ -297,9 +317,13 @@ def game_sessions(limit: int = 10) -> list[dict]:
         limit: How many recordings to list.
     """
     found = sorted(_recordings().items(), key=lambda kv: kv[1].stat().st_mtime, reverse=True)
-    out = [{"name": n, "recorded": time.strftime("%Y-%m-%d %H:%M", time.localtime(p.stat().st_mtime)),
-            "kind": "benchmark run" if p.parent.name == "bench" else "session", "game": _application_of(p)}
-           for n, p in found[:int(limit)]]
+    out = []
+    for n, p in found[:int(limit)]:
+        row = {"name": n, "recorded": time.strftime("%Y-%m-%d %H:%M", time.localtime(p.stat().st_mtime)),
+               "kind": "benchmark run" if p.parent.name == "bench" else "session", "game": _application_of(p)}
+        if row["kind"] == "benchmark run":
+            row["batch"], row["variant"] = split_run_name(n)
+        out.append(row)
     return out or [{"error": "no recordings in data/sessions or data/bench; record one with scripts/record_presentmon.ps1"}]
 
 

@@ -181,6 +181,24 @@ def game_summary(r: dict) -> dict:
             "minutes": round(r["window_seconds"] / 60, 1)}
 
 
+def variant_verdict(row: dict, ref: dict) -> dict:
+    """Plain words for one variant against the reference. A difference smaller than the run-to-run spread (or 5%) is
+    called noise, so a lucky run is not presented as a result."""
+    if row.get("reference"):
+        return {"verdict": "Reference", "tone": "mute", "text": "The other variants are compared with this one."}
+    avg, low = row["avg_change"], row["low1_change"]
+    if avg is None or low is None:
+        return {"verdict": "No comparison", "tone": "mute", "text": "Not enough data."}
+    noise = max(5.0, 100 * max(row["spread"], ref["spread"]) / ref["avg_fps"]) if ref["avg_fps"] else 5.0
+    text = f"Average FPS {avg:+.0f}%, worst 1% {low:+.0f}%."
+    if row["runs"] < 2 or ref["runs"] < 2:
+        text += " Only one run: it could be just chance."
+    if abs(avg) < noise and abs(low) < noise:
+        return {"verdict": "About the same", "tone": "mute", "text": text + f" Within the run-to-run noise (about {noise:.0f}%)."}
+    better = avg + low > 0
+    return {"verdict": "Better" if better else "Worse", "tone": "ok" if better else "bad", "text": text}
+
+
 def game_compare_text(c: dict) -> dict:
     avg = c["avg_fps"]["change_percent"]
     low = c["low1_fps"]["change_percent"]

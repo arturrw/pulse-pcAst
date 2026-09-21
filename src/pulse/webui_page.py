@@ -284,14 +284,53 @@ function gamePage(out, game, recs) {
     draw();
     return h("section", {}, h("h2", {}, title + " (" + items.length + ")"), h("p", { class: "mute small" }, blurb), box);
   };
+  // Benchmark runs come in batches (one test session with several variants, each repeated): one table per batch.
   const sessions = recs.filter((r) => r.kind !== "benchmark run"), runs = recs.filter((r) => r.kind === "benchmark run");
+  const batches = [], byTag = new Map(), loose = [];
+  for (const r of runs) {
+    if (!r.batch) { loose.push(r); continue; }
+    if (!byTag.has(r.batch)) { const b = { tag: r.batch, runs: [] }; byTag.set(r.batch, b); batches.push(b); }
+    byTag.get(r.batch).runs.push(r);
+  }
+  const pct = (x) => (x == null ? "" : (x > 0 ? "+" : "") + x.toFixed(0) + "%");
+  const batchRow = (b) => {
+    const host = h("div", { class: "more" });
+    const load = async () => {
+      fill(host, h("p", { class: "mute" }, "Analysing " + b.runs.length + " runs…"));
+      try {
+        const d = await api("batch?game=" + encodeURIComponent(game.id) + "&batch=" + encodeURIComponent(b.tag));
+        const rows = d.variants.map((v) => h("tr", {},
+          h("td", {}, h("b", {}, v.variant), h("div", { class: "mute small" }, plural(v.runs, "run", "runs"))),
+          h("td", {}, Math.round(v.avg_fps) + " FPS", h("div", { class: "mute small" }, v.reference ? "reference" : pct(v.avg_change))),
+          h("td", {}, Math.round(v.low1_fps) + " FPS", h("div", { class: "mute small" }, pct(v.low1_change))),
+          h("td", {}, h("span", { class: "badge " + v.tone }, v.verdict), h("div", { class: "mute small" }, v.text))));
+        const singles = h("div", { class: "more" });
+        fill(singles, b.runs.map((r) => row(r).el));
+        fill(host, h("div", { style: "overflow-x:auto" }, h("table", {}, h("tr", {}, ["Variant", "Average FPS", "Worst 1% FPS", "Result"].map((t) => h("th", {}, t))), rows)),
+          h("p", { class: "mute small" }, d.note),
+          h("button", { onclick: () => singles.classList.toggle("open") }, "Show the " + b.runs.length + " single runs"), singles);
+      } catch (e) { fill(host, err(e)); }
+    };
+    const variants = new Set(b.runs.map((r) => r.variant)).size;
+    return h("div", { class: "item col" }, h("div", { class: "head", onclick: () => { const on = host.classList.toggle("open"); if (on && !host.dataset.done) { host.dataset.done = "1"; load(); } } },
+      h("div", { class: "body" }, h("div", { class: "title" }, b.tag), h("div", { class: "detail" }, plural(variants, "variant", "variants") + " · " + plural(b.runs.length, "run", "runs") + " · " + b.runs[0].recorded)), h("span", { class: "mute" }, "▾")), host);
+  };
+  const batchSection = () => {
+    if (!batches.length) return null;
+    let all = false; const box = h("div", {});
+    const draw = () => fill(box, (all ? batches : batches.slice(0, 6)).map(batchRow), !all && batches.length > 6 ? h("button", { onclick: () => { all = true; draw(); } }, "Show all " + batches.length) : null);
+    draw();
+    return h("section", {}, h("h2", {}, "Benchmark tests (" + batches.length + ")"),
+      h("p", { class: "mute small" }, "Repeated runs of the same scene with different settings. Open one to see which setting helped, hurt or made no real difference."), box);
+  };
   const latest = h("div", {});
   out(h("button", { class: "back", onclick: () => { gameOpen = null; go("games"); } }, "← All games"),
     h("h2", { style: "margin:8px 0 2px;font-size:20px" }, game.name),
     h("p", { class: "mute" }, [plural(recs.length, "recording", "recordings"), "last one " + recs[0].recorded].join(" · ")),
     h("section", {}, h("h2", {}, "Latest recording"), h("p", { class: "mute small" }, recs[0].name), latest),
     group("Play sessions", sessions, "Normal play, recorded while you played."),
-    group("Benchmark runs", runs, "Repeated test runs of the same scene, for comparing settings."));
+    batchSection(),
+    group("Other test runs", loose, "Single runs that do not belong to a batch."));
   openRec(recs[0], latest);
 }
 

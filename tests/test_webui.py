@@ -400,6 +400,27 @@ def test_the_report_can_be_shown_inside_the_page_and_charts_have_hover_labels():
         s.stop()
 
 
+def test_a_batch_compares_every_variant_with_base_and_calls_noise_noise():
+    from test_game_tools import _data_dir
+    root = _data_dir()                                                      # batch "t": base (30 fps-ish run) and slow (half the FPS)
+    app = webui.App(root / "metrics.db")
+    d = app.game_batch("cs2.exe", "t")
+    rows = {v["variant"]: v for v in d["variants"]}
+    assert d["reference"] == "base" and rows["base"]["verdict"] == "Reference"
+    assert rows["slow"]["verdict"] == "Worse" and rows["slow"]["avg_change"] < -30 and "Only one run" in rows["slow"]["text"]
+    for bad in (("cs2.exe", "nope"), ("other.exe", "t")):
+        try:
+            app.game_batch(*bad)
+        except webui.ApiError as e:
+            assert e.code == 404
+        else:
+            raise AssertionError(bad)
+    from pulse import explain, games
+    same = games.variant_table({"base": [{"avg_fps": 100, "low1_fps": 60, "low01_fps": 50, "p99_ms": 10}] * 2,
+                                "x": [{"avg_fps": 102, "low1_fps": 61, "low01_fps": 50, "p99_ms": 10}] * 2})
+    assert explain.variant_verdict(same[1], same[0])["verdict"] == "About the same"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

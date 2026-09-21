@@ -12,10 +12,12 @@ CHARTS = [("gpu_temp_c", "GPU temperature", "°C"), ("cpu_percent", "CPU load", 
 MAX_POINTS = 360          # chart resolution: a day at 30 s is 2880 samples, averaged into buckets
 
 
-def cells(hours: float) -> int:
-    """How many equal time cells the charts of a period are split into (one cell is at least a minute wide). All charts
-    of a report use the same cells, so the same cell number means the same moment in every chart."""
-    return max(20, min(MAX_POINTS, int(hours * 60)))
+def cells(hours: float, step: float = 30.0) -> int:
+    """How many equal time cells the charts of a period are split into. A cell is at least a minute wide and at least
+    one and a half sample intervals (`step`, seconds), so no cell is empty just because samples are sparse. All charts of
+    a report use the same cells, so the same cell number means the same moment in every chart."""
+    cell = max(hours * 3600 / MAX_POINTS, 60.0, 1.5 * step)
+    return max(20, min(MAX_POINTS, int(hours * 3600 / cell)))
 W, H, PAD_L, PAD_R, PAD_T, PAD_B = 720, 170, 46, 10, 10, 24
 
 STYLE = """
@@ -78,9 +80,9 @@ def downsample(points: list[tuple[float, float]], t0: float, t1: float, n: int =
     return [(t0 + (k + 0.5) * width, sum(v) / len(v)) for k, v in sorted(buckets.items())]
 
 
-def chart(metric: str, title: str, unit: str, hours: float, now: float) -> str:
+def chart(metric: str, title: str, unit: str, hours: float, now: float, step: float = 30.0) -> str:
     t0, t1 = now - hours * 3600, now
-    n = cells(hours)
+    n = cells(hours, step)
     pts = downsample(series(metric, hours, now), t0, t1, n)
     if len(pts) < 2:
         return f"<h2>{escape(title)}</h2><p class='mute'>no data in this period</p>"
@@ -306,7 +308,9 @@ def build_report(hours: float = 24, now: float | None = None) -> str:
     else:
         cov = (f"<p class='warn'>The collector recorded only {recorded:.1f} h of these {hours:g} h "
                "(the PC was off or asleep in between); gaps are left blank.</p>") if recorded < hours * 0.8 else ""
-        charts = "<div class='charts'>" + "".join(chart(m, t, u, hours, now) for m, t, u in CHARTS) + "</div>"
+        gaps = sorted(b - a for a, b in zip(stamps, stamps[1:]) if b - a < 3600)
+        step = gaps[len(gaps) // 2] if gaps else 30.0               # how often the collector writes a sample
+        charts = "<div class='charts'>" + "".join(chart(m, t, u, hours, now, step) for m, t, u in CHARTS) + "</div>"
         body = "".join(f"<section>{s}</section>" for s in (cov + overview(hours, now), unusual(hours), alerts_section(), health_section(hours), startup_section(hours), watch(hours), traffic_section(), charts,
                                                           disks(), processes(hours), games()) if s)
     return (f"<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>"

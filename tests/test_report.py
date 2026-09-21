@@ -146,6 +146,21 @@ def test_the_charts_share_time_cells_so_hovering_one_moment_shows_it_in_every_ch
     assert report.cells(1) == 60 and report.cells(24) == 360 and report.cells(0.1) == 20
 
 
+def test_sparse_samples_do_not_leave_holes_between_the_hover_columns():
+    path = Path(tempfile.mkdtemp()) / "t.db"
+    now = time.time()
+    with db.connect(path) as conn:
+        for i in range(288):                                                 # a day of samples, one every 5 minutes
+            ts = now - 300 * (288 - i)
+            conn.execute("INSERT INTO system_metrics (ts, cpu_percent, ram_percent, ram_used_mb) VALUES (?,?,?,?)", (ts, 20.0 + i % 5, 50.0, 15000.0))
+            conn.execute("INSERT INTO gpu_metrics (ts, idx, util_percent, temp_c) VALUES (?,0,?,?)", (ts, 30.0, 55.0))
+    tools.set_db(path)
+    html = report.build_report(24)
+    ids = sorted(int(x) for x in re.findall(r"class='pt c(\d+)'", html.split("<svg")[1]))
+    assert len(ids) > 100 and ids == list(range(ids[0], ids[-1] + 1))      # a cell per 7.5 minutes here, none of them empty
+    assert report.cells(24, 300) < report.cells(24, 30) == 360
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

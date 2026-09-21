@@ -71,4 +71,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri
+      - name: Placeholder for the bundled backend (the build script insists it exists; the test does not use it)
+        shell: bash
+        run: mkdir -p build/dist/pulse && echo placeholder > build/dist/pulse/placeholder.txt
       - run: cargo test --manifest-path desktop/src-tauri/Cargo.toml

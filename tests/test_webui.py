@@ -421,6 +421,54 @@ def test_a_batch_compares_every_variant_with_base_and_calls_noise_noise():
     assert explain.variant_verdict(same[1], same[0])["verdict"] == "About the same"
 
 
+def test_a_game_can_be_added_recorded_and_removed_and_only_a_plain_exe_name_is_accepted():
+    from pulse import gamelib
+    launched, root = [], Path(tempfile.mkdtemp())
+    app = webui.App(root / "m.db", launcher=launched.append)
+    app.game_add("Hades2.exe", "Hades II")
+    shown = {g["id"]: g for g in app.games()["games"]}["Hades2.exe"]
+    assert shown["name"] == "Hades II" and shown["tracked"] and shown["last"] is None and shown["sessions"] == 0
+    bs = chr(92)
+    for bad in ("x; calc.exe", f"..{bs}evil.exe", f"a{bs}b.exe", "../evil.exe", "cmd", "", "  ", None, 5, f"C:{bs}Windows{bs}x.exe", "a" * 80 + ".exe"):
+        try:
+            app.game_add(bad)
+        except webui.ApiError as e:
+            assert e.code == 400, bad
+        else:
+            raise AssertionError(bad)
+    real = gamelib.presentmon_exe
+    try:
+        gamelib.presentmon_exe = lambda: None                                    # not installed: say where to get it, start nothing
+        try:
+            app.game_record("Hades2.exe")
+        except webui.ApiError as e:
+            assert e.code == 409 and "github.com/GameTechDev/PresentMon" in str(e) and not launched
+        else:
+            raise AssertionError("recording without PresentMon")
+        gamelib.presentmon_exe = lambda: Path("PresentMon.exe")
+        assert app.game_record("Hades2.exe")["ok"] is True
+    finally:
+        gamelib.presentmon_exe = real
+    cmd = launched[0]                                                          # a list, never a shell string: the name is one argument
+    assert cmd[cmd.index("-Process") + 1] == "Hades2.exe" and cmd[cmd.index("-DataDir") + 1] == str(root)
+    assert app.game_remove("hades2.exe")["ok"] is True and not app.games()["games"]
+    try:
+        app.game_remove("Hades2.exe")
+    except webui.ApiError as e:
+        assert e.code == 404
+    (root / "games.json").write_text("{broken", encoding="utf-8")
+    assert app.games()["games"] == []                                          # a damaged list never breaks the library
+
+
+def test_an_added_game_joins_the_games_that_already_have_recordings_by_name_ignoring_case():
+    from test_game_tools import _data_dir
+    root = _data_dir()
+    app = webui.App(root / "metrics.db")
+    app.game_add("CS2.exe", "My CS")
+    games = app.games()["games"]
+    assert len(games) == 1 and games[0]["tracked"] and games[0]["name"] == "My CS" and games[0]["runs"] == 2 and games[0]["sessions"] == 1
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

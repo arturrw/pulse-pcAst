@@ -5,7 +5,7 @@ from pathlib import Path
 
 root = Path(SPECPATH).parent
 a = Analysis([str(root / "packaging" / "entry.py")], pathex=[str(root / "src")],
-             datas=[(str(root / "scripts" / "autostart.ps1"), "scripts")],
+             datas=[(str(root / "scripts" / "autostart.ps1"), "scripts"), (str(root / "scripts" / "record_presentmon.ps1"), "scripts")],
              hiddenimports=["pynvml"], excludes=["tkinter", "matplotlib", "numpy", "pandas"])
 pyz = PYZ(a.pure)
 cli = EXE(pyz, a.scripts, [], exclude_binaries=True, name="pulse", console=True)

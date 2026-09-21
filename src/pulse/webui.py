@@ -9,6 +9,7 @@ forget a finding, ask the assistant, install or remove our own three background 
 The server stops when the browser tab has been closed for a few minutes."""
 import json
 import secrets
+import subprocess
 import threading
 import time
 import webbrowser
@@ -16,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ack, alerts, chat, chatstore, db, digest, explain, games, report, settings, setup_tasks, tools
+from . import ack, alerts, chat, chatstore, db, digest, explain, gamelib, games, paths, report, settings, setup_tasks, tools
 from .webui_page import render_page
 
 MAX_BODY = 16 * 1024
@@ -41,12 +42,14 @@ def _clean_id(value, what: str = "id") -> str:
 class App:
     """Everything the pages can ask for, as plain functions returning JSON-ready dicts (no HTTP in here)."""
 
-    def __init__(self, db_path, model: str = "qwen3:8b", client_factory=None, task_runner=None, notify_fn=None):
+    def __init__(self, db_path, model: str = "qwen3:8b", client_factory=None, task_runner=None, notify_fn=None, launcher=None):
         self.db_path = Path(db_path)
         self.model = model
         self._client_factory = client_factory
         self._task_runner = task_runner
         self._notify = notify_fn or alerts.notify
+        self._launch = launcher or (lambda cmd: subprocess.Popen(cmd, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0)))
+        self.gamelist = gamelib.GameList(self.db_path.parent)
         self._cache: dict[str, tuple[float, object]] = {}
         self._lock = threading.Lock()
         self._refreshing: set[str] = set()
@@ -223,15 +226,65 @@ class App:
         good = [r for r in recs if "error" not in r]
         library: dict[str, dict] = {}
         for r in good:                                   # newest first, so the first one seen is the last played
-            g = library.setdefault(r["game"], {"id": r["game"], "name": tools.game_title(r["game"]), "sessions": 0,
-                                               "runs": 0, "last": r["recorded"]})
+            g = library.setdefault(r["game"].lower(), {"id": r["game"], "name": tools.game_title(r["game"]), "sessions": 0,
+                                                       "runs": 0, "last": r["recorded"], "tracked": False})
             g["runs" if r["kind"] == "benchmark run" else "sessions"] += 1
-        return {"recordings": recs, "games": list(library.values())}
+        for t in self.gamelist.load():                   # games the user added: shown even before the first recording
+            g = library.get(t["process"].lower())
+            if g is None:
+                library[t["process"].lower()] = {"id": t["process"], "name": t["title"] or tools.game_title(t["process"]),
+                                                 "sessions": 0, "runs": 0, "last": None, "tracked": True}
+            else:
+                g["tracked"] = True
+                if t["title"]:
+                    g["name"] = t["title"]
+        return {"recordings": recs, "games": list(library.values()), "presentmon": gamelib.presentmon_exe() is not None}
+
+    def programs(self) -> dict:
+        """Programs running now, to pick a game from."""
+        return {"programs": gamelib.running_programs(), "presentmon": gamelib.presentmon_exe() is not None}
+
+    def game_add(self, process, title=None) -> dict:
+        try:
+            entry = self.gamelist.add(process, (title or "").strip() if isinstance(title, str) else "")
+        except ValueError as e:
+            raise ApiError(str(e)) from None
+        return {"ok": True, "game": entry}
+
+    def game_remove(self, process) -> dict:
+        try:
+            removed = self.gamelist.remove(process)
+        except ValueError as e:
+            raise ApiError(str(e)) from None
+        if not removed:
+            raise ApiError("this game is not in your list (games with recordings stay in the library)", 404)
+        return {"ok": True}
+
+    def game_record(self, process) -> dict:
+        """Start PresentMon for a game (Windows asks for administrator rights); it stops by itself when the game closes."""
+        try:
+            proc = gamelib.valid_process(process)
+        except ValueError as e:
+            raise ApiError(str(e)) from None
+        if gamelib.presentmon_exe() is None:
+            raise ApiError("PresentMon is not installed. Download PresentMon-...-x64.exe from "
+                           "https://github.com/GameTechDev/PresentMon/releases and put it in " + str(gamelib.presentmon_folder()), 409)
+        script = paths.resource("scripts", "record_presentmon.ps1")
+        if not script.exists():
+            raise ApiError("the recording script was not found", 500)
+        self.gamelist.add(proc)
+        try:
+            self._launch(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script),
+                          "-Process", proc, "-DataDir", str(self.db_path.parent)])
+        except OSError as e:
+            raise ApiError(f"could not start the recorder: {e}", 500) from None
+        return {"ok": True, "message": "Allow the administrator prompt, then start the game. The recording stops when you close it "
+                                       "and shows up here."}
 
     def game_batch(self, game, batch) -> dict:
         """One batch of benchmark runs: every variant with its repeats averaged, and what it did against the reference."""
         game, batch = _clean_id(game, "game"), _clean_id(batch, "batch")
-        runs = [r for r in tools.game_sessions(1000) if "error" not in r and r["game"] == game and r["kind"] == "benchmark run"
+        runs = [r for r in tools.game_sessions(1000) if "error" not in r and r["game"].lower() == game.lower() and r["kind"] == "benchmark run"
                 and r.get("batch") == batch]
         if not runs:
             raise ApiError("no such batch", 404)
@@ -512,6 +565,10 @@ class Handler(BaseHTTPRequestHandler):
             ("GET", "game"): lambda: app.game_report(q("name")),
             ("GET", "compare"): lambda: app.game_compare(q("a"), q("b")),
             ("GET", "batch"): lambda: app.game_batch(q("game"), q("batch")),
+            ("GET", "programs"): lambda: app.programs(),
+            ("POST", "game_add"): lambda: app.game_add(body.get("process"), body.get("title")),
+            ("POST", "game_remove"): lambda: app.game_remove(body.get("process")),
+            ("POST", "game_record"): lambda: app.game_record(body.get("process")),
             ("GET", "timeline"): lambda: app.timeline(q("when", "now"), q("minutes", "30")),
             ("GET", "setup"): lambda: app.setup(),
             ("POST", "ping"): lambda: self.server.touch() or {"ok": True},

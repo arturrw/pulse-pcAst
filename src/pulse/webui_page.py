@@ -34,6 +34,10 @@ iframe{display:block;width:100%;height:600px;border:0;background:transparent}
 .chats{display:flex;flex-direction:column;gap:6px;position:sticky;top:0}.chatrow{display:flex;align-items:center;gap:6px;padding:7px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer}
 .chatrow:hover{border-color:var(--acc)}.chatrow.on{border-color:var(--acc);background:var(--chip)}.chatrow .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chatrow .x{border:0;background:none;padding:0 6px;color:var(--mute)}.chatrow .x:hover{color:var(--bad)}
+.vrow{display:grid;grid-template-columns:minmax(120px,1.2fr) 1fr 1fr minmax(130px,1.5fr);gap:2px 14px;padding:9px 0;border-bottom:1px solid var(--line);align-items:start}
+.vrow.head{color:var(--mute);font-weight:500;font-size:13px;padding:6px 0}.vrow .txt{grid-column:1/-1}
+.progs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.progs button{font-size:13px}.progs button.on{border-color:var(--acc)}.addgame .row{margin:8px 0}
+@media (max-width:640px){.vrow{grid-template-columns:1fr 1fr}.vrow.head{display:none}.vrow .nm{order:1}.vrow .res{order:2;justify-self:end}.vrow .av{order:3}.vrow .lo{order:4}.vrow .txt{order:5}}
 .gamecard{cursor:pointer}.gamecard:hover{border-color:var(--acc)}.back{margin-bottom:6px}
 @media (max-width:760px){.askwrap{grid-template-columns:1fr}.chats{position:static}}
 .chat{display:flex;flex-direction:column;gap:10px;min-height:280px}.msg{max-width:85%;padding:9px 13px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
@@ -248,23 +252,54 @@ async function timeline(out) {
 }
 
 // ---- games: a library of games; opening one shows only its own recordings
-let gameOpen = null;
+let gameOpen = null, gamesNote = "";
 async function games(out) {
   const d = await api("games"); const recs = d.recordings.filter((r) => !r.error);
-  if (!recs.length) return out(h("p", { class: "mute" }, "How your games ran."), h("div", { class: "card" }, h("p", {}, "No game recordings yet."), h("p", { class: "mute" }, "Record a game with PresentMon (see the README) and it will show up here.")));
   const game = d.games.find((g) => g.id === gameOpen);
-  if (!game) { gameOpen = null; return library(out, d.games); }
-  gamePage(out, game, recs.filter((r) => r.game === game.id));
+  if (!game) { gameOpen = null; return library(out, d); }
+  gamePage(out, game, recs.filter((r) => r.game.toLowerCase() === game.id.toLowerCase()), d);
 }
 function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
-function library(out, list) {
-  out(h("p", { class: "mute" }, "Your games. Open one to see how it ran, in plain words."),
-    h("div", { class: "grid" }, list.map((g) => h("div", { class: "card gamecard", onclick: () => { gameOpen = g.id; go("games"); } },
-      h("div", { class: "big" }, g.name),
-      h("div", { class: "mute" }, [g.sessions ? plural(g.sessions, "play session", "play sessions") : null, g.runs ? plural(g.runs, "benchmark run", "benchmark runs") : null].filter(Boolean).join(" · ")),
-      h("div", { class: "mute small" }, "Last recorded " + g.last)))));
+// Pick or type a program name; the game joins the library at once and can be recorded right away.
+function addGamePanel(startOpen, done) {
+  const el = h("div", { class: "card addgame more" + (startOpen ? " open" : "") });
+  const input = h("input", { type: "text", placeholder: "Program name, e.g. Hades2.exe" });
+  const msg = h("div", {}); const progs = h("div", { class: "progs" }); let loaded = false;
+  let all = [];
+  const draw = () => {
+    const q = input.value.trim().toLowerCase(); const shown = all.filter((x) => !q || x.process.toLowerCase().includes(q)).slice(0, 24);
+    fill(progs, shown.length ? shown.map((x) => h("button", { class: x.process.toLowerCase() === q ? "on" : "", title: x.game_like ? "Looks like an installed game" : "", onclick: () => { input.value = x.process; draw(); } }, (x.game_like ? "★ " : "") + x.process))
+      : h("span", { class: "mute small" }, all.length ? "Nothing running matches. You can still add it by name." : "Nothing found."));
+  };
+  input.addEventListener("input", draw);
+  const load = async () => {
+    if (loaded) return; loaded = true; fill(progs, h("span", { class: "mute small" }, "Looking at what is running…"));
+    try { all = (await api("programs")).programs; draw(); } catch (e) { fill(progs, err(e)); }
+  };
+  const act = async (record) => {
+    fill(msg); if (!input.value.trim()) { fill(msg, h("p", { class: "err" }, "Pick a program from the list or type its name.")); return; }
+    try {
+      await api("game_add", { process: input.value.trim() });
+      if (record) { const r = await api("game_record", { process: input.value.trim() }); gamesNote = r.message; }
+      done();
+    } catch (e) { fill(msg, err(e)); }
+  };
+  fill(el, h("p", {}, h("b", {}, "Add a game")),
+    h("p", { class: "mute small" }, "Start the game first: it appears in the list below (games installed by Steam and similar come first, marked ★). Or type the program name, as shown in Task Manager under Details."),
+    progs, h("div", { class: "row" }, input, h("button", { onclick: () => act(false) }, "Add to library"), h("button", { class: "primary", onclick: () => act(true) }, "Add and record a session")), msg);
+  return { el, open: () => { el.classList.add("open"); load(); input.focus(); }, toggle: () => { el.classList.toggle("open"); if (el.classList.contains("open")) load(); } };
 }
-function gamePage(out, game, recs) {
+function library(out, d) {
+  const list = d.games; const panel = addGamePanel(!list.length, () => go("games")); const note = gamesNote; gamesNote = "";
+  if (!list.length) panel.open();
+  out(h("div", { class: "row" }, h("p", { class: "mute", style: "margin:0;flex:1" }, "Your games. Open one to see how it ran, in plain words."), h("button", { class: "primary", onclick: () => panel.toggle() }, "+ Add a game")),
+    note ? h("div", { class: "card" }, note) : null, panel.el,
+    list.length ? h("div", { class: "grid", style: "margin-top:12px" }, list.map((g) => h("div", { class: "card gamecard", onclick: () => { gameOpen = g.id; go("games"); } },
+      h("div", { class: "big" }, g.name),
+      h("div", { class: "mute" }, [g.sessions ? plural(g.sessions, "play session", "play sessions") : null, g.runs ? plural(g.runs, "benchmark run", "benchmark runs") : null].filter(Boolean).join(" · ") || "No recordings yet"),
+      h("div", { class: "mute small" }, g.last ? "Last recorded " + g.last : "Open it to record a session")))) : h("p", { class: "mute" }, "No games yet. Add the first one above."));
+}
+function gamePage(out, game, recs, d) {
   const numbers = (r) => h("div", { class: "grid" }, r.numbers.map((n) => h("div", { class: "card" }, h("h3", {}, n.label), h("div", { class: "big" }, String(n.value)), h("div", { class: "mute small" }, n.hint))));
   async function openRec(rec, host) {
     fill(host, h("p", { class: "mute" }, "Analysing…"));
@@ -305,14 +340,15 @@ function gamePage(out, game, recs) {
       fill(host, h("p", { class: "mute" }, "Analysing " + b.runs.length + " runs…"));
       try {
         const d = await api("batch?game=" + encodeURIComponent(game.id) + "&batch=" + encodeURIComponent(b.tag));
-        const rows = d.variants.map((v) => h("tr", {},
-          h("td", {}, h("b", {}, v.variant), h("div", { class: "mute small" }, plural(v.runs, "run", "runs"))),
-          h("td", {}, Math.round(v.avg_fps) + " FPS", h("div", { class: "mute small" }, v.reference ? "reference" : pct(v.avg_change))),
-          h("td", {}, Math.round(v.low1_fps) + " FPS", h("div", { class: "mute small" }, pct(v.low1_change))),
-          h("td", {}, h("span", { class: "badge " + v.tone }, v.verdict), h("div", { class: "mute small" }, v.text))));
+        const rows = d.variants.map((v) => h("div", { class: "vrow" },
+          h("div", { class: "nm" }, h("b", {}, v.variant), h("div", { class: "mute small" }, plural(v.runs, "run", "runs"))),
+          h("div", { class: "av" }, Math.round(v.avg_fps) + " FPS", h("div", { class: "mute small" }, v.reference ? "reference" : pct(v.avg_change))),
+          h("div", { class: "lo" }, Math.round(v.low1_fps) + " FPS", h("div", { class: "mute small" }, pct(v.low1_change))),
+          h("div", { class: "res" }, h("span", { class: "badge " + v.tone }, v.verdict)),
+          h("div", { class: "txt mute small" }, v.text)));
         const singles = h("div", { class: "more" });
         fill(singles, b.runs.map((r) => row(r).el));
-        fill(host, h("div", { style: "overflow-x:auto" }, h("table", {}, h("tr", {}, ["Variant", "Average FPS", "Worst 1% FPS", "Result"].map((t) => h("th", {}, t))), rows)),
+        fill(host, h("div", { class: "vrow head" }, h("div", {}, "Variant"), h("div", {}, "Average FPS"), h("div", {}, "Worst 1% FPS"), h("div", {}, "Result")), rows,
           h("p", { class: "mute small" }, d.note),
           h("button", { onclick: () => singles.classList.toggle("open") }, "Show the " + b.runs.length + " single runs"), singles);
       } catch (e) { fill(host, err(e)); }
@@ -329,15 +365,24 @@ function gamePage(out, game, recs) {
     return h("section", {}, h("h2", {}, "Benchmark tests (" + batches.length + ")"),
       h("p", { class: "mute small" }, "Repeated runs of the same scene with different settings. Open one to see which setting helped, hurt or made no real difference."), box);
   };
-  const latest = h("div", {});
+  const latest = h("div", {}); const recMsg = h("div", {});
+  const record = h("button", { class: "primary", onclick: async () => {
+    fill(recMsg, h("p", { class: "mute" }, "Starting…"));
+    try { const r = await api("game_record", { process: game.id }); fill(recMsg, h("div", { class: "card" }, r.message)); } catch (e) { fill(recMsg, err(e)); } } }, "Record a session");
+  const remove = game.tracked ? h("button", { onclick: async () => { try { await api("game_remove", { process: game.id }); gameOpen = null; go("games"); } catch (e) { fill(recMsg, err(e)); } } }, "Remove from my list") : null;
   out(h("button", { class: "back", onclick: () => { gameOpen = null; go("games"); } }, "← All games"),
     h("h2", { style: "margin:8px 0 2px;font-size:20px" }, game.name),
-    h("p", { class: "mute" }, [plural(recs.length, "recording", "recordings"), "last one " + recs[0].recorded].join(" · ")),
-    h("section", {}, h("h2", {}, "Latest recording"), h("p", { class: "mute small" }, recs[0].name), latest),
-    group("Play sessions", sessions, "Normal play, recorded while you played."),
-    batchSection(),
-    group("Other test runs", loose, "Single runs that do not belong to a batch."));
-  openRec(recs[0], latest);
+    h("p", { class: "mute" }, recs.length ? [plural(recs.length, "recording", "recordings"), "last one " + recs[0].recorded].join(" · ") : "No recordings yet"),
+    h("div", { class: "row" }, record, remove), recMsg,
+    recs.length ? [
+      h("section", {}, h("h2", {}, "Latest recording"), h("p", { class: "mute small" }, recs[0].name), latest),
+      batchSection(),
+      group("Play sessions", sessions, "Normal play, recorded while you played."),
+      group("Other test runs", loose, "Single runs that do not belong to a batch.")]
+    : h("div", { class: "card" }, h("p", {}, "Nothing recorded for this game yet."),
+        h("p", { class: "mute" }, d.presentmon ? "Press “Record a session”, allow the administrator prompt and start the game. Close the game when you are done: the recording appears here."
+          : "Recording needs PresentMon, which is not installed yet. Press “Record a session” to see where to get it.")));
+  if (recs.length) openRec(recs[0], latest);
 }
 
 // ---- setup

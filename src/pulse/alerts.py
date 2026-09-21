@@ -7,6 +7,7 @@ the history and shows a message, it never changes or stops anything.
 Only things worth interrupting for are alerted: a stopped collector, a hot GPU, a nearly full disk, an unusual AND
 high stretch of temperature / RAM / swap, and the serious findings of process_watch (a disguised or tampered file,
 a process eating the CPU). Weak evidence (a process name that is merely new) is left for the report."""
+import inspect
 import json
 import os
 import subprocess
@@ -30,11 +31,15 @@ COOLDOWN_HOURS = {"high": 6.0, "medium": 24.0}
 BS = chr(92)
 # Windows PowerShell's own app id: a toast needs a registered one, and this needs no installation.
 APP_ID = "{1AC14E77-02E7-4E5D-B744-2EB1AE5198B7}" + BS + "WindowsPowerShell" + BS + "v1.0" + BS + "powershell.exe"
+OWN_APP_ID = "Pulse.Desktop"   # registered by the installer (shows "Pulse" as the source of the notification)
+TABS = ("overview", "ask", "findings", "timeline", "games", "setup")
 _TOAST = (
     "$t=[Windows.UI.Notifications.ToastNotificationManager,Windows.UI.Notifications,ContentType=WindowsRuntime];"
     "$x=$t::GetTemplateContent('ToastText02');$n=$x.GetElementsByTagName('text');"
     "$n.Item(0).AppendChild($x.CreateTextNode($env:PCA_TITLE))|Out-Null;"
     "$n.Item(1).AppendChild($x.CreateTextNode($env:PCA_BODY))|Out-Null;"
+    # a click opens pulse://<tab>, which the installed app handles (it is a link, so nothing else has to be running)
+    "if($env:PCA_LAUNCH){$r=$x.DocumentElement;$r.SetAttribute('activationType','protocol');$r.SetAttribute('launch',$env:PCA_LAUNCH)};"
     "$t::CreateToastNotifier($env:PCA_APPID).Show([Windows.UI.Notifications.ToastNotification]::new($x))"
 )
 
@@ -46,6 +51,17 @@ class Alert:
     title: str
     body: str
     cooldown_hours: float | None = None   # overrides the severity default (state alerts repeat once a day at most)
+
+    @property
+    def tab(self) -> str:
+        """The page of the app that explains this alert; clicking the notification opens it."""
+        if self.key.startswith("collector"):
+            return "setup"
+        if self.key.startswith(("gpu-", "unusual-")):
+            return "timeline"
+        if self.key.startswith(("disk-", "check-failed")):
+            return "overview"
+        return "findings"
 
 
 def check_collector(conn, now: float) -> list[Alert]:
@@ -202,15 +218,45 @@ def select_new(alerts: list[Alert], state: dict[str, float], now: float) -> list
             if now - state.get(a.key, 0.0) >= (a.cooldown_hours or COOLDOWN_HOURS[a.severity]) * 3600]
 
 
-def notify(title: str, body: str) -> bool:
-    """A Windows toast notification. Returns False when it could not be shown (the log still has the alert)."""
-    env = {**os.environ, "PCA_TITLE": title, "PCA_BODY": body, "PCA_APPID": APP_ID}
+def _registry_key_exists(path: str) -> bool:
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path):
+            return True
+    except (ImportError, OSError):
+        return False
+
+
+def protocol_registered() -> bool:
+    """Is pulse:// handled (the installed app registers it)? Without it a click could not lead anywhere."""
+    return _registry_key_exists("Software\\Classes\\pulse\\shell\\open\\command")
+
+
+def app_id() -> str:
+    return OWN_APP_ID if _registry_key_exists("Software\\Classes\\AppUserModelId\\" + OWN_APP_ID) else APP_ID
+
+
+def notify(title: str, body: str, tab: str | None = None) -> bool:
+    """A Windows toast notification. Clicking it opens the app on `tab` when the app is installed. Returns False when
+    it could not be shown (the log still has the alert)."""
+    env = {**os.environ, "PCA_TITLE": title, "PCA_BODY": body, "PCA_APPID": app_id(),
+           "PCA_LAUNCH": f"pulse://{tab}" if tab in TABS and protocol_registered() else ""}
     try:
         res = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", _TOAST], env=env,
                              capture_output=True, timeout=30, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         return res.returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def send(notify_fn, title: str, body: str, tab: str | None = None):
+    """Show a notification through `notify_fn`; a plain two-argument function (a test double) just does not get the tab."""
+    try:
+        takes_tab = len(inspect.signature(notify_fn).parameters) >= 3
+    except (TypeError, ValueError):
+        takes_tab = False
+    return notify_fn(title, body, tab) if takes_tab else notify_fn(title, body)
 
 
 def _load_state(path: Path) -> dict[str, float]:
@@ -239,7 +285,7 @@ def run_once(db_path, now: float | None = None, notify_fn=notify, dry_run: bool 
         return new
     lines = []
     for a in new:
-        shown = notify_fn(a.title, a.body)
+        shown = send(notify_fn, a.title, a.body, a.tab)
         state[a.key] = now
         lines.append(f"{time.strftime('%Y-%m-%d %H:%M', time.localtime(now))} [{a.severity}] {a.title} - {a.body}"
                      + ("" if shown else "  (notification could not be shown)"))

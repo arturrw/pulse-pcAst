@@ -16,6 +16,27 @@ use tauri_plugin_updater::UpdaterExt;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 struct Backend(Mutex<Option<Child>>);
+/// The page a `pulse://<page>` link asked for while the backend was still starting.
+struct PendingTab(Mutex<Option<String>>);
+
+const PAGES: [&str; 6] = ["overview", "ask", "findings", "timeline", "games", "setup"];
+
+/// The page named by a `pulse://<page>` argument (a clicked notification starts the app with one). Only the app's own
+/// page names are accepted, whatever else the link says.
+fn tab_from_args<I: IntoIterator<Item = String>>(args: I) -> Option<String> {
+    args.into_iter().find_map(|a| {
+        let rest = a.strip_prefix("pulse://")?;
+        let name = rest.split(|c| c == '/' || c == '?' || c == '#').next()?.to_ascii_lowercase();
+        PAGES.contains(&name.as_str()).then_some(name)
+    })
+}
+
+/// Switch the window to a page of the app (the page defines `go`).
+fn open_tab(app: &AppHandle, tab: &str) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.eval(&format!("if (typeof go === 'function') go('{tab}')"));
+    }
+}
 
 /// Put the backend into a job object that kills its members when the shell dies for any reason (crash, End task),
 /// so a killed shell never leaves the backend running.
@@ -108,9 +129,18 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
 
 fn main() {
     let app = tauri::Builder::default()
+        // First: a second start (a clicked notification, a shortcut) hands over to the running app instead of opening another.
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            show_main(app);
+            if let Some(tab) = tab_from_args(argv) {
+                *app.state::<PendingTab>().0.lock().unwrap() = Some(tab.clone());
+                open_tab(app, &tab);
+            }
+        }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![check_update, install_update])
         .manage(Backend(Mutex::new(None)))
+        .manage(PendingTab(Mutex::new(tab_from_args(std::env::args().skip(1)))))
         .setup(|app| {
             let handle = app.handle().clone();
 
@@ -142,7 +172,12 @@ fn main() {
                 Ok((child, url)) => {
                     *handle.state::<Backend>().0.lock().unwrap() = Some(child);
                     if let Some(w) = handle.get_webview_window("main") {
-                        if let Ok(u) = url.parse() {
+                        let tab = handle.state::<PendingTab>().0.lock().unwrap().take();
+                        let target = match tab {
+                            Some(t) => format!("{url}#{t}"),
+                            None => url.clone(),
+                        };
+                        if let Ok(u) = target.parse() {
                             let _ = w.navigate(u);
                         }
                     }
@@ -171,4 +206,25 @@ fn main() {
             stop_backend(handle);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tab_from_args;
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn a_link_opens_only_a_page_of_the_app() {
+        assert_eq!(tab_from_args(args(&["pulse://findings"])), Some("findings".into()));
+        assert_eq!(tab_from_args(args(&["pulse-desktop.exe", "pulse://Games/"])), Some("games".into()));
+        assert_eq!(tab_from_args(args(&["pulse://timeline?when=14:03"])), Some("timeline".into()));
+        assert_eq!(tab_from_args(args(&["pulse://setup#x"])), Some("setup".into()));
+        for bad in ["pulse://", "pulse://evil", "pulse://findings.exe", "pulse:findings", "http://findings", "findings", "pulse://'); alert(1)//"] {
+            assert_eq!(tab_from_args(args(&[bad])), None, "{bad}");
+        }
+        assert_eq!(tab_from_args(Vec::<String>::new()), None);
+    }
 }

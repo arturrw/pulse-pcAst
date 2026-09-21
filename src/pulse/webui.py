@@ -429,7 +429,7 @@ class App:
         return {"ok": True, "settings": after}
 
     def test_notification(self) -> dict:
-        return {"ok": bool(self._notify("pulse test", "If you can read this, notifications reach you."))}
+        return {"ok": bool(alerts.send(self._notify, "pulse test", "If you can read this, notifications reach you.", "setup"))}
 
     def run_digest(self) -> dict:
         d = digest.run(self.db_path, notify_fn=self._notify, refresh_report=True)

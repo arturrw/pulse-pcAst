@@ -184,6 +184,42 @@ def test_disguised_file_becomes_a_high_alert():
     assert len(found) == 1 and found[0].severity == "high" and "system program name" in found[0].body
 
 
+def test_the_notification_carries_a_link_only_when_the_app_can_handle_it():
+    from types import SimpleNamespace
+    seen = []
+    real_run, real_key = alerts.subprocess.run, alerts._registry_key_exists
+    alerts.subprocess.run = lambda cmd, env=None, **kw: seen.append(env) or SimpleNamespace(returncode=0)
+    try:
+        alerts._registry_key_exists = lambda path: False                     # app not installed: a plain notification, PowerShell as source
+        assert alerts.notify("t", "b", "findings") is True
+        assert seen[-1]["PCA_LAUNCH"] == "" and seen[-1]["PCA_APPID"] == alerts.APP_ID
+        alerts._registry_key_exists = lambda path: True                      # installed: a click opens the page, "Pulse" is the source
+        alerts.notify("t", "b", "findings")
+        assert seen[-1]["PCA_LAUNCH"] == "pulse://findings" and seen[-1]["PCA_APPID"] == alerts.OWN_APP_ID
+        for bad in ("../x", "findings/../../x", "FINDINGS", "", None):       # only the app's own pages can become a link
+            alerts.notify("t", "b", bad)
+            assert seen[-1]["PCA_LAUNCH"] == "", bad
+        assert "SetAttribute('launch'" in alerts._TOAST and "PCA_LAUNCH" in alerts._TOAST
+    finally:
+        alerts.subprocess.run, alerts._registry_key_exists = real_run, real_key
+
+
+def test_a_two_argument_notifier_still_works_and_one_that_takes_the_page_gets_it():
+    got = []
+    alerts.send(lambda t, b: got.append((t, b)), "x", "y", "setup")
+    alerts.send(lambda t, b, tab: got.append((t, b, tab)), "x", "y", "setup")
+    assert got == [("x", "y"), ("x", "y", "setup")]
+
+
+def test_every_kind_of_alert_opens_a_page_of_the_app_that_explains_it():
+    pages = {"collector-stale": "setup", "gpu-hot": "timeline", "unusual-ram_percent-17": "timeline", "disk-low-C:": "overview",
+             "disk-forecast-C:": "overview", "check-failed-KeyError": "overview", "file-x.exe": "findings", "net-file-x.exe": "findings",
+             "busy-x.exe": "findings", "growing-x.exe": "findings", "autorun:task:x:0a": "findings"}
+    for key, page in pages.items():
+        a = alerts.Alert(key, "high", "t", "b")
+        assert a.tab == page and a.tab in alerts.TABS, key
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

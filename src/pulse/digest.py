@@ -84,7 +84,7 @@ def run(db_path, notify_fn=alerts.notify, dry_run: bool = False, refresh_report:
     d = build(now)
     if dry_run:
         return d
-    d["shown"] = notify_fn(d["title"], d["body"])
+    d["shown"] = alerts.send(notify_fn, d["title"], d["body"], "findings" if d["todo"] else "overview")
     stamp = time.strftime("%Y-%m-%d %H:%M", time.localtime(time.time() if now is None else now))
     with open(Path(db_path).parent / "digest.log", "a", encoding="utf-8") as f:
         f.write(f"{stamp} [{d['status']}] {d['title']} - {d['body']}\n")

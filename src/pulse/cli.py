@@ -137,7 +137,7 @@ def cmd_alerts(args: argparse.Namespace) -> None:
     from . import alerts
 
     if args.test:
-        ok = alerts.notify("Pulse test", "If you can read this, alerts can reach you.")
+        ok = alerts.notify("Pulse test", "If you can read this, alerts can reach you.", "setup")
         print("Notification shown." if ok else "The notification could not be shown (see README, Alerts).")
         return
     found = alerts.run_once(args.db, dry_run=args.dry_run)

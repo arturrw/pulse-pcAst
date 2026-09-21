@@ -11,6 +11,7 @@ use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri_plugin_updater::UpdaterExt;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -80,8 +81,35 @@ fn stop_backend(app: &AppHandle) {
     }
 }
 
+#[derive(serde::Serialize)]
+struct UpdateInfo {
+    version: String,
+    notes: Option<String>,
+}
+
+/// The newer signed release, if there is one (the answer is `null` when this is the latest).
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    Ok(update.map(|u| UpdateInfo { version: u.version, notes: u.body }))
+}
+
+/// Download the newer release (its signature is checked against the key built into the app), stop the backend and run
+/// the installer, which restarts Pulse when it is done.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    let Some(update) = update else { return Ok(()) };
+    let bytes = update.download(|_, _| {}, || {}).await.map_err(|e| e.to_string())?;
+    stop_backend(&app);
+    update.install(bytes).map_err(|e| e.to_string())?;
+    app.restart()
+}
+
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![check_update, install_update])
         .manage(Backend(Mutex::new(None)))
         .setup(|app| {
             let handle = app.handle().clone();

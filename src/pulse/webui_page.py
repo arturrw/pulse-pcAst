@@ -44,9 +44,11 @@ code{background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anyw
 .grp{font-size:14px;margin:18px 0 8px;color:var(--mute)}
 .fields{padding:0 14px 12px;display:flex;flex-direction:column;gap:10px}.field{display:flex;flex-direction:column;gap:3px}.field>label{font-weight:600;font-size:13px}.field select,.field input[type=time]{align-self:flex-start;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 8px}
 .row.tight{margin:0}
+.upd{display:none;align-items:center;gap:12px;padding:8px 20px;background:var(--chip);border-bottom:1px solid var(--line)}.upd.show{display:flex}.upd .grow{flex:1}
 .verdict{font-size:22px;font-weight:700;margin:4px 0}.verdict.ok{color:var(--ok)}.verdict.warn{color:var(--warn)}.verdict.bad{color:var(--bad)}
 </style></head><body>
 <header><span class="dot" id="dot"></span><h1>Pulse</h1><button id="quit">Quit</button></header>
+<div class="upd" id="upd"></div>
 <nav id="tabs"></nav><main id="view"></main>
 <script nonce="{{NONCE}}">
 "use strict";
@@ -270,6 +272,23 @@ async function setup(out) {
       h("p", { class: "mute" }, "Traffic per program needs administrator rights. In a terminal opened as administrator run:"), h("p", {}, h("code", {}, s.netstats_command))),
     h("section", {}, h("h2", {}, "Where your data is"), h("code", {}, s.data_folder)));
 }
+
+// Updates: only inside the desktop app (the shell checks for a signed release and installs it).
+const shell = window.__TAURI_INTERNALS__;
+async function checkUpdate() {
+  if (!shell) return;
+  let u = null; try { u = await shell.invoke("check_update"); } catch (e) { return; }
+  const box = $("upd");
+  if (!u) { box.classList.remove("show"); return; }
+  const later = h("button", { onclick: () => box.classList.remove("show") }, "Later");
+  const go = h("button", { class: "primary", onclick: async () => {
+    go.disabled = true; later.disabled = true; text.textContent = "Downloading and installing Pulse " + u.version + "… it restarts by itself.";
+    try { await shell.invoke("install_update"); } catch (e) { text.textContent = "The update failed: " + (e && e.message || e); go.disabled = false; later.disabled = false; }
+  } }, "Update now");
+  const text = h("span", { class: "grow" }, "Pulse " + u.version + " is available.");
+  box.replaceChildren(text, go, later); box.classList.add("show");
+}
+checkUpdate(); setInterval(checkUpdate, 6 * 3600 * 1000);
 
 $("quit").addEventListener("click", async () => { try { await api("quit", {}); } catch (e) {} document.body.replaceChildren(h("p", { class: "mute", style: "padding:24px" }, "Pulse has stopped. You can close this window.")); });
 async function beat() { try { const st = await api("status"); $("dot").style.background = st.collector.recording ? "var(--ok)" : "var(--bad)"; } catch (e) {} }

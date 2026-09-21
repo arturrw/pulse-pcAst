@@ -386,7 +386,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(403, b"Open the address that `pulse ui` printed in the terminal.", "text/plain; charset=utf-8")
                 return
             nonce = secrets.token_urlsafe(12)
-            csp = (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self'; "
+            csp = (f"default-src 'none'; script-src 'nonce-{nonce}'; style-src 'nonce-{nonce}'; connect-src 'self' ipc: http://ipc.localhost; "
                    "frame-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
             self._send(200, render_page(nonce).encode("utf-8"), "text/html; charset=utf-8", csp=csp)
             return

@@ -92,16 +92,16 @@ def chart(metric: str, title: str, unit: str, hours: float, now: float) -> str:
         v = lo + (hi - lo) * frac
         parts.append(f"<line class='g' x1='{PAD_L}' x2='{W - PAD_R}' y1='{y(v):.1f}' y2='{y(v):.1f}'/>"
                      f"<text x='{PAD_L - 6}' y='{y(v) + 4:.1f}' text-anchor='end'>{v:.0f}</text>")
+    long = hours > 24          # over more than a day the time alone is ambiguous: the axis and the hover labels carry the date
     for frac in (0, 0.25, 0.5, 0.75, 1):
         t = t0 + (t1 - t0) * frac
         anchor = "start" if frac == 0 else "end" if frac == 1 else "middle"
-        parts.append(f"<text x='{x(t):.1f}' y='{H - 6}' text-anchor='{anchor}'>{_clock(t)}</text>")
+        parts.append(f"<text x='{x(t):.1f}' y='{H - 6}' text-anchor='{anchor}'>{_clock(t, '%d %b %H:%M' if long else '%H:%M')}</text>")
     for seg in segments(pts):
         if len(seg) == 1:   # a lone sample between two gaps: a dot, not an invisible line
             parts.append(f"<circle cx='{x(seg[0][0]):.1f}' cy='{y(seg[0][1]):.1f}' r='1.6' fill='var(--line)'/>")
         else:
             parts.append("<polyline class='l' points='" + " ".join(f"{x(t):.1f},{y(v):.1f}" for t, v in seg) + "'/>")
-    long = hours > 24
     xs = [x(t) for t, _ in pts]
     for i, (t, v) in enumerate(pts):   # one invisible column per sample: hovering it shows that sample
         left = max(xs[i] - (xs[i] - xs[i - 1]) / 2, xs[i] - 5) if i else xs[i] - 5

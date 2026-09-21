@@ -203,8 +203,11 @@ powershell -File scripts\autostart.ps1 install -Task digest  # every morning at 
 pulse ui            # opens the dashboard in your browser
 ```
 
-One window with tabs: overview (recording, Windows and Defender, autostart, processes, disks, report), Ask (the chat, with the
-tools it used), Findings (accept or forget), Timeline, Games, Setup (install or remove the three background jobs, Ollama status).
+One window with tabs: overview (recording, Windows and Defender, autostart, processes, disks, and the report for the last
+6 hours, 24 hours, 3 days or 7 days; hover a chart to read the time and value of a point), Ask (the chat, with the tools it
+used; earlier chats stay in a list on the left and can be reopened, they are kept in `chats.json` next to the database),
+Findings (accept or forget), Timeline, Games (a library: open a game to see only its recordings), Setup (install or remove
+the three background jobs, Ollama status).
 It is a server on 127.0.0.1 only; every request needs a per-run secret token (HttpOnly SameSite=Strict cookie), the Host and
 Origin are checked, pages carry a strict content policy and are built with `textContent` only. Only a fixed list of actions exists.
 The server stops a few minutes after the tab is closed (`--idle 0` disables that). `--no-browser` and `--json-ready` are for
@@ -238,6 +241,19 @@ python -m pulse session compare before.csv after.csv --hml-before a.hml --hml-af
 PresentMon and Afterburner stamp time in different zones; the shift is detected automatically from the two
 recordings (`--pm-offset-hours` overrides). `data/sessions/` is git-ignored. Use the same scene or benchmark
 route for a before/after comparison, and repeat each setting at least twice: single runs vary.
+
+### How the Games tab groups recordings
+
+A recording belongs to the game named in its PresentMon file (the `Application` column, e.g. `cs2.exe`; well-known games
+get their proper title, others a readable version of the file name). Opening a game shows its play sessions and its
+benchmark tests.
+
+Benchmark runs are grouped into **batches** by file name, `<batch>_<variant>_<repeat>.csv` in `data/bench/` (this is what
+`scripts\bench_batch.ps1` writes: batch = `-Tag`, variant = the setting being tested, repeat = 1, 2, 3...). For example
+`combo_fsr3_1.csv`, `combo_fsr3_2.csv` and `combo_base_1.csv` make the batch `combo` with the variants `fsr3` and `base`.
+Opening a batch shows one row per variant, the repeats averaged, with the change against `base` (or the first variant
+when there is no `base`) and a verdict in plain words. A difference smaller than the spread between repeats, or under 5%,
+is called noise, and a variant with a single run says so. Files that do not follow the pattern are listed as single runs.
 
 ### CS2 settings A/B (unattended benchmark)
 

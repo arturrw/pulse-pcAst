@@ -104,12 +104,18 @@ function explainBox(x) {
 }
 
 // The report is a separate page shown inside this one; it is as tall as its content, so the page has the only scrollbar.
-function reportFrame() {
-  const frame = h("iframe", { src: "/report?hours=24&embed=1", sandbox: "allow-same-origin", title: "report" });
+const PERIODS = [[6, "Last 6 hours"], [24, "Last 24 hours"], [72, "Last 3 days"], [168, "Last 7 days"]];
+let period = 24; try { const p = +localStorage.getItem("pulse.period"); if (PERIODS.some((x) => x[0] === p)) period = p; } catch (e) {}
+function reportPart() {
+  const frame = h("iframe", { sandbox: "allow-same-origin", title: "report" });
+  const note = h("p", { class: "mute" }, "Loading the report…");
   const fit = () => { try { const b = frame.contentDocument && frame.contentDocument.body; if (b) frame.style.height = Math.ceil(b.getBoundingClientRect().height) + 4 + "px"; } catch (e) {} };
-  frame.addEventListener("load", () => { fit(); setTimeout(fit, 400); });
+  frame.addEventListener("load", () => { note.hidden = true; fit(); setTimeout(fit, 400); });
   new ResizeObserver(fit).observe(frame);
-  return frame;
+  const load = () => { note.hidden = false; frame.src = "/report?hours=" + period + "&embed=1"; };
+  const sel = h("select", { onchange: () => { period = +sel.value; try { localStorage.setItem("pulse.period", String(period)); } catch (e) {} load(); } }, PERIODS.map(([v, label]) => h("option", { value: String(v) }, label)));
+  sel.value = String(period); load();
+  return h("section", {}, h("div", { class: "row" }, h("h2", { style: "margin:0;flex:1" }, "Report"), sel), note, frame);
 }
 
 async function overview(out) {
@@ -125,7 +131,7 @@ async function overview(out) {
       p.available ? card("Running programs", p.flagged ? "bad" : "ok", p.flagged ? p.flagged + " look unusual" : "Nothing unusual", "", "findings") : null,
       s.disk ? card("Disk space", s.disk.free_gb < 30 ? "bad" : "ok", Math.round(s.disk.free_gb) + " GB free", "on " + s.disk.name, "setup") : null,
       h("div", { class: "card link", onclick: () => go("setup") }, h("h3", {}, "Background helpers"), h("div", {}, jobs))),
-    h("section", {}, h("h2", {}, "Report (last 24 hours)"), reportFrame()));
+    reportPart());
 }
 
 let chatId = null;   // the open conversation (null = a new one, created when the first question is sent)

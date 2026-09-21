@@ -128,6 +128,13 @@ def test_every_chart_sample_has_a_hover_label_with_time_and_value():
     assert "<script" not in html                                     # done with CSS only: the report still runs no script
 
 
+def test_a_period_longer_than_a_day_puts_dates_on_the_axis_and_in_the_hover_labels():
+    _db(samples=100)
+    assert re.search(r">\d\d [A-Z][a-z]{2} \d\d:\d\d<", report.build_report(48))       # axis: "22 Sep 14:00"
+    assert re.search(r"class='tip'.*?>\d\d [A-Z][a-z]{2} \d\d:\d\d · ", report.build_report(48))
+    assert not re.search(r">\d\d [A-Z][a-z]{2} \d\d:\d\d<", report.build_report(2))     # within a day the time alone is enough
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

@@ -56,6 +56,7 @@ iframe{display:block;width:100%;height:600px;border:0;background:transparent;opa
 .progs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.progs button{font-size:13px}.progs button.on{border-color:var(--acc)}.addgame .row{margin:8px 0}
 @media (max-width:640px){.vrow{grid-template-columns:1fr 1fr}.vrow.head{display:none}.vrow .nm{order:1}.vrow .res{order:2;justify-self:end}.vrow .av{order:3}.vrow .lo{order:4}.vrow .txt{order:5}.vrow .lbl{display:block}}
 .gamecard{cursor:pointer}.gamecard:hover{border-color:var(--acc)}.back{margin-bottom:6px}
+@media (max-width:700px){.sidebar{position:absolute;top:0;bottom:0;z-index:6;box-shadow:2px 0 16px rgba(0,0,0,.25)}}
 @media (max-width:760px){.askwrap{grid-template-columns:1fr}.chats{position:static}}
 .chat{display:flex;flex-direction:column;gap:10px;min-height:280px}.msg{max-width:85%;padding:9px 13px;border-radius:12px;white-space:pre-wrap;overflow-wrap:anywhere}
 .msg.me{align-self:flex-end;background:var(--acc);color:var(--acc-ink)}.msg.bot{align-self:flex-start;background:var(--card);border:1px solid var(--line)}

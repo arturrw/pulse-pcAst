@@ -8,8 +8,8 @@ PAGE = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Pulse</title>
 <style nonce="{{NONCE}}">
-:root{--bg:#f4f4f1;--card:#fff;--ink:#1c1c1a;--mute:#6b6b66;--line:#e2e2dc;--acc:#2f6fdb;--acc-ink:#fff;--ok:#2a7d46;--warn:#b25b00;--bad:#c23b32;--chip:#eceae4}
-@media (prefers-color-scheme:dark){:root{--bg:#141413;--card:#1e1e1c;--ink:#ecece8;--mute:#9a9a94;--line:#33332f;--acc:#6ea0ff;--acc-ink:#0d0d0c;--ok:#5fcf8b;--warn:#ffb15c;--bad:#ff8a80;--chip:#2a2a27}}
+:root{--bg:#f4f4f1;--card:#fff;--ink:#1c1c1a;--mute:#6b6b66;--line:#e2e2dc;--acc:#2f6fdb;--acc-ink:#fff;--acc-tint:#e4ecfa;--ok:#2a7d46;--warn:#b25b00;--bad:#c23b32;--chip:#eceae4}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--card:#1e1e1c;--ink:#ecece8;--mute:#9a9a94;--line:#33332f;--acc:#6ea0ff;--acc-ink:#0d0d0c;--acc-tint:#243350;--ok:#5fcf8b;--warn:#ffb15c;--bad:#ff8a80;--chip:#2a2a27}}
 *{box-sizing:border-box}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,"Segoe UI",sans-serif;display:flex;flex-direction:column}
 header{display:flex;align-items:center;gap:12px;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--card)}
 header h1{font-size:17px;margin:0;flex:1}header .dot{width:10px;height:10px;border-radius:50%;background:var(--mute)}
@@ -20,16 +20,29 @@ button:hover:not(:disabled){border-color:var(--acc);transform:translateY(-1px);b
 button:active:not(:disabled){transform:translateY(0) scale(.96);box-shadow:none;transition-duration:.05s}
 button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible,th:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
 button.primary{background:var(--acc);color:var(--acc-ink);border-color:var(--acc)}button:disabled{opacity:.5;cursor:default}
-nav{display:flex;gap:4px;padding:8px 20px 0;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap;position:relative}
-nav .ink{position:absolute;height:3px;border-radius:3px 3px 0 0;background:var(--acc);pointer-events:none;transition:left .28s cubic-bezier(.4,0,.2,1),width .28s cubic-bezier(.4,0,.2,1),top .28s cubic-bezier(.4,0,.2,1)}
-nav button{border:0;border-bottom:3px solid transparent;border-radius:6px 6px 0 0;background:none;padding:8px 14px}
-nav button:hover:not(:disabled){transform:none;box-shadow:none;background:var(--chip)}nav button.on{font-weight:600}
-main{flex:1;overflow:auto;padding:18px 20px 40px;max-width:1100px;width:100%;margin:0 auto}
+.shell{flex:1;display:flex;overflow:hidden;position:relative}
+.sidebar{width:76px;flex-shrink:0;overflow:hidden;background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:2px;padding:10px 6px;position:relative;transition:width .28s cubic-bezier(.4,0,.2,1),padding .28s cubic-bezier(.4,0,.2,1)}
+.shell.collapsed .sidebar{width:0;padding-left:0;padding-right:0;border-right:0}
+.sidebar .ink{position:absolute;left:6px;right:6px;border-radius:8px;background:var(--chip);pointer-events:none;transition:top .28s cubic-bezier(.4,0,.2,1),height .28s cubic-bezier(.4,0,.2,1)}
+.sidebtn{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;width:100%;padding:11px 2px;border:0;border-radius:8px;background:none;color:var(--ink);flex-shrink:0}
+.sidebtn:hover:not(:disabled){background:var(--chip);transform:none;box-shadow:none}
+.sidebtn.on{color:var(--acc)}
+.edge{position:absolute;top:0;bottom:0;left:76px;width:16px;display:flex;align-items:center;justify-content:center;z-index:5;transition:left .28s cubic-bezier(.4,0,.2,1)}
+.shell.collapsed .edge{left:0}
+.side-toggle{opacity:0;width:20px;height:38px;padding:0;border-radius:0 8px 8px 0;border:1px solid var(--line);border-left:0;background:var(--card);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:opacity .18s ease}
+.side-toggle svg{transition:transform .28s cubic-bezier(.4,0,.2,1)}
+.shell.collapsed .side-toggle svg{transform:rotate(180deg)}
+.edge:hover .side-toggle,.side-toggle:focus-visible{opacity:1}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+main{flex:1;overflow:auto;padding:18px 20px 40px}
+main>*{max-width:1100px;width:100%;margin:0 auto}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
 .card h3{margin:0 0 4px;font-size:13px;color:var(--mute);font-weight:500}.card .big{font-size:20px;font-weight:600;line-height:1.25}
 .ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.mute{color:var(--mute)}
 .badge{display:inline-block;font-size:12px;border-radius:999px;padding:1px 9px;border:1px solid currentColor}
+.tag{display:inline-block;font-size:12px;border-radius:999px;padding:2px 9px;background:var(--chip);margin:3px 6px 0 0}
+.tag.acc{background:var(--acc-tint);color:var(--acc)}
 section{margin-top:22px}section>h2{font-size:15px;margin:0 0 8px}
 .item{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}
 .item .body{flex:1;min-width:0}.item .title{font-weight:600}.item .detail{color:var(--mute);font-size:13px;overflow-wrap:anywhere}
@@ -68,7 +81,11 @@ code{background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anyw
 </style></head><body>
 <header><span class="dot" id="dot"></span><h1>Pulse</h1></header>
 <div class="upd" id="upd"></div>
-<nav id="tabs"></nav><main id="view"></main>
+<div class="shell" id="shell">
+<aside class="sidebar" id="sidebar"></aside>
+<div class="edge"><button class="side-toggle" id="sideToggle" type="button" aria-label="Toggle menu" title="Toggle menu"></button></div>
+<main id="view"></main>
+</div>
 <script nonce="{{NONCE}}">
 "use strict";
 const $ = (id) => document.getElementById(id);
@@ -98,22 +115,56 @@ const err = (e) => h("p", { class: "err" }, String(e.message || e));
 const SEV = { high: ["Serious", "bad"], medium: ["Worth a look", "warn"], low: ["Minor", "mute"] };
 const sev = (s) => h("span", { class: "badge " + (SEV[s] || SEV.low)[1] }, (SEV[s] || SEV.low)[0]);
 
+// Small line icons for the sidebar, built straight from SVG primitives (no images, no external files).
+const SVGNS = "http://www.w3.org/2000/svg";
+const ICONS = {
+  overview: [["rect", { x: 3, y: 3, width: 8, height: 8, rx: 2 }], ["rect", { x: 13, y: 3, width: 8, height: 5, rx: 2 }], ["rect", { x: 13, y: 10, width: 8, height: 11, rx: 2 }], ["rect", { x: 3, y: 13, width: 8, height: 8, rx: 2 }]],
+  ask: [["rect", { x: 3, y: 5, width: 18, height: 12, rx: 3 }], ["path", { d: "M8 17l-2 3v-3" }], ["line", { x1: 7, y1: 9, x2: 17, y2: 9 }], ["line", { x1: 7, y1: 13, x2: 13, y2: 13 }]],
+  findings: [["path", { d: "M12 3l7 3v5c0 5-3.2 8-7 10-3.8-2-7-5-7-10V6l7-3Z" }], ["path", { d: "M9 12l2 2 4-4" }]],
+  timeline: [["circle", { cx: 12, cy: 12, r: 9 }], ["path", { d: "M12 7v5l3.5 2" }]],
+  games: [["rect", { x: 2, y: 7, width: 20, height: 10, rx: 5 }], ["line", { x1: 7, y1: 10, x2: 7, y2: 14 }], ["line", { x1: 5, y1: 12, x2: 9, y2: 12 }], ["circle", { cx: 15, cy: 10.5, r: 1.1 }], ["circle", { cx: 17.5, cy: 13, r: 1.1 }]],
+  setup: [["line", { x1: 4, y1: 6, x2: 20, y2: 6 }], ["circle", { cx: 9, cy: 6, r: 2 }], ["line", { x1: 4, y1: 12, x2: 20, y2: 12 }], ["circle", { cx: 15, cy: 12, r: 2 }], ["line", { x1: 4, y1: 18, x2: 20, y2: 18 }], ["circle", { cx: 9, cy: 18, r: 2 }]],
+  refresh: [["path", { d: "M20 11A8 8 0 1 0 19 15" }], ["path", { d: "M20 5v6h-6" }]],
+  chevron: [["path", { d: "M14 6l-6 6 6 6" }]],
+};
+function icon(name, size) {
+  const s = document.createElementNS(SVGNS, "svg");
+  s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("width", size || 20); s.setAttribute("height", size || 20);
+  s.setAttribute("fill", "none"); s.setAttribute("stroke", "currentColor"); s.setAttribute("stroke-width", "1.8");
+  s.setAttribute("stroke-linecap", "round"); s.setAttribute("stroke-linejoin", "round"); s.setAttribute("aria-hidden", "true");
+  for (const [tag, attrs] of ICONS[name] || []) { const el = document.createElementNS(SVGNS, tag); for (const k in attrs) el.setAttribute(k, attrs[k]); s.append(el); }
+  return s;
+}
+function iconBtn(name, label, onclick) { return h("button", { class: "row tight", style: "gap:6px", onclick, title: label }, icon(name, 16), label); }
+
 function go(name) { tab = name; history.replaceState(null, "", "#" + name); show(); }
-function moveInk(animate) {
-  const nav = $("tabs"), on = nav.querySelector("button.on"), ink = nav.querySelector(".ink"); if (!on || !ink) return;
+function moveSideInk(animate) {
+  const bar = $("sidebar"), on = bar.querySelector("button.on"), ink = bar.querySelector(".ink"); if (!on || !ink) return;
   if (!animate) ink.style.transition = "none";
-  ink.style.left = on.offsetLeft + "px"; ink.style.width = on.offsetWidth + "px"; ink.style.top = on.offsetTop + on.offsetHeight - 3 + "px";
+  ink.style.top = on.offsetTop + "px"; ink.style.height = on.offsetHeight + "px";
   if (!animate) { ink.getBoundingClientRect(); ink.style.transition = ""; }
 }
-function drawTabs() {
-  const nav = $("tabs"); const first = !nav.querySelector("button");
-  if (first) nav.append(...TABS.map(([k, label]) => { const b = h("button", { onclick: () => go(k) }, label); b.dataset.tab = k; return b; }), h("span", { class: "ink" }));
-  nav.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
-  moveInk(!first);
+function drawSidebar() {
+  const bar = $("sidebar"); const first = !bar.querySelector("button");
+  if (first) bar.append(...TABS.map(([k, label]) => {
+    const b = h("button", { class: "sidebtn", onclick: () => go(k), title: label, "aria-label": label }, icon(k), h("span", { class: "sr-only" }, label));
+    b.dataset.tab = k; return b;
+  }), h("span", { class: "ink" }));
+  bar.querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  moveSideInk(!first);
 }
-window.addEventListener("resize", () => moveInk(false));
+window.addEventListener("resize", () => moveSideInk(false));
+const shellEl = $("shell");
+let sidebarCollapsed = false; try { sidebarCollapsed = localStorage.getItem("pulse.sidebar") === "1"; } catch (e) {}
+if (sidebarCollapsed) shellEl.classList.add("collapsed");
+$("sideToggle").append(icon("chevron", 16));
+$("sideToggle").addEventListener("click", () => {
+  const collapsed = shellEl.classList.toggle("collapsed");
+  try { localStorage.setItem("pulse.sidebar", collapsed ? "1" : "0"); } catch (e) {}
+  setTimeout(() => moveSideInk(false), 300);
+});
 function show() {
-  drawTabs(); const mine = ++gen; fill(view(), h("p", { class: "mute" }, "Loading…"));
+  drawSidebar(); const mine = ++gen; fill(view(), h("p", { class: "mute" }, "Loading…"));
   const out = (...k) => { if (mine === gen) fill(view(), ...k); };
   ({ overview, ask, findings, timeline, games, setup })[tab](out).catch((e) => out(err(e)));
 }
@@ -166,8 +217,10 @@ function makeSortable(doc) {
 function unusualPart() {
   const host = h("div", {});
   const item = (p) => h("div", { class: "item" }, h("span", { class: "badge warn" }, "Unusual"),
-    h("div", { class: "body" }, h("div", { class: "title" }, p.title + " \u00b7 " + p.started + " \u00b7 " + p.minutes + " min"),
-      h("div", { class: "detail" }, p.details.join(" \u00b7 ") + (p.during_game ? " \u00b7 while " + p.during_game + " was running" : ""))),
+    h("div", { class: "body" }, h("div", { class: "title" }, p.title),
+      h("div", { class: "mute small" }, p.started + " \u00b7 " + plural(p.minutes, "minute", "minutes")),
+      h("div", { class: "detail" }, p.details.join(" \u00b7 ")),
+      p.during_game ? h("span", { class: "tag acc" }, "while " + p.during_game + " was running") : null),
     h("button", { onclick: () => askAbout(p.question) }, "What could it be?"));
   const load = async () => {
     try {
@@ -354,15 +407,15 @@ function addGamePanel(startOpen, done) {
       done();
     } catch (e) { fill(msg, err(e)); }
   };
-  fill(el, h("p", {}, h("b", {}, "Add a game")),
-    h("p", { class: "mute small" }, "Start the game first: it appears in the list below (games installed by Steam and similar come first, marked ★). Or type the program name, as shown in Task Manager under Details."),
+  fill(el, h("div", { class: "row", style: "justify-content:space-between" }, h("p", { style: "margin:0" }, h("b", {}, "Add a game")), iconBtn("refresh", "Refresh the list", () => { loaded = false; load(); })),
+    h("p", { class: "mute small" }, "Start the game first: it appears in the list below (games installed by Steam and similar come first, marked ★). If you just launched it, press “Refresh the list”. Or type the program name, as shown in Task Manager under Details."),
     progs, h("div", { class: "row" }, input, h("button", { onclick: () => act(false) }, "Add to library"), h("button", { class: "primary", onclick: () => act(true) }, "Add and record a session")), msg);
   return { el, open: () => { el.classList.add("open"); load(); input.focus(); }, toggle: () => { el.classList.toggle("open"); if (el.classList.contains("open")) load(); } };
 }
 function library(out, d) {
   const list = d.games; const panel = addGamePanel(!list.length, () => go("games")); const note = gamesNote; gamesNote = "";
   if (!list.length) panel.open();
-  out(h("div", { class: "row" }, h("p", { class: "mute", style: "margin:0;flex:1" }, "Your games. Open one to see how it ran, in plain words."), h("button", { class: "primary", onclick: () => panel.toggle() }, "+ Add a game")),
+  out(h("div", { class: "row" }, h("p", { class: "mute", style: "margin:0;flex:1" }, "Your games. Open one to see how it ran, in plain words."), iconBtn("refresh", "Refresh", () => go("games")), h("button", { class: "primary", onclick: () => panel.toggle() }, "+ Add a game")),
     note ? h("div", { class: "card" }, note) : null, panel.el,
     list.length ? h("div", { class: "grid", style: "margin-top:12px" }, list.map((g) => h("div", { class: "card gamecard", onclick: () => { gameOpen = g.id; go("games"); } },
       h("div", { class: "big" }, g.name),
@@ -440,10 +493,12 @@ function gamePage(out, game, recs, d) {
     fill(recMsg, h("p", { class: "mute" }, "Starting…"));
     try { const r = await api("game_record", { process: game.id }); fill(recMsg, h("div", { class: "card" }, r.message)); } catch (e) { fill(recMsg, err(e)); } } }, "Record a session");
   const remove = game.tracked ? h("button", { onclick: async () => { try { await api("game_remove", { process: game.id }); gameOpen = null; go("games"); } catch (e) { fill(recMsg, err(e)); } } }, "Remove from my list") : null;
+  const refresh = iconBtn("refresh", "Refresh", () => go("games"));
   out(h("button", { class: "back", onclick: () => { gameOpen = null; go("games"); } }, "← All games"),
     h("h2", { style: "margin:8px 0 2px;font-size:20px" }, game.name),
     h("p", { class: "mute" }, recs.length ? [plural(recs.length, "recording", "recordings"), "last one " + recs[0].recorded].join(" · ") : "No recordings yet"),
-    h("div", { class: "row" }, record, remove), recMsg,
+    h("div", { class: "row" }, record, remove, refresh),
+    h("p", { class: "mute small" }, "Finished a session? Press “Refresh” to check for the new recording."), recMsg,
     recs.length ? [
       h("section", {}, h("h2", {}, "Latest recording"), h("p", { class: "mute small" }, recs[0].name), latest),
       batchSection(),

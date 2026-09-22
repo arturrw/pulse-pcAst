@@ -35,7 +35,7 @@ async function open(theme, width, height) {
   await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false });
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
   await send("Page.navigate", { url });
-  await waitFor("typeof go === 'function' && document.querySelectorAll('#tabs button').length === 6", "the page");
+  await waitFor("typeof go === 'function' && document.querySelectorAll('#sidebar button').length === 6", "the page");
   const shot = async (name) => { const r = await send("Page.captureScreenshot", { format: "png" }); fs.writeFileSync(`${outDir}/${name}.png`, Buffer.from(r.result.data, "base64")); };
   return { send, evalJs, waitFor, shot, errors, close: () => { ws.close(); chrome.kill(); } };
 }
@@ -53,7 +53,7 @@ async function check(theme, width) {
     if (sides.sw > sides.W + 1 || sides.bad.length) fail(tab, `sticks out sideways (page ${sides.sw}px in a ${sides.W}px window): ${sides.bad.join(", ")}`);
     if ((await s.evalJs("document.querySelector('#view').innerText.trim().length")) < 20) fail(tab, "the page is empty");
     if (tab !== "ask" && (await s.evalJs("document.querySelectorAll('#view .err').length"))) fail(tab, "shows an error: " + (await s.evalJs("document.querySelector('#view .err').textContent")));
-    const motion = await s.evalJs("(() => { const v = document.querySelector('#view > *'); const b = document.querySelector('button'); return [getComputedStyle(v).animationName, parseFloat(getComputedStyle(b).transitionDuration) > 0, getComputedStyle(document.querySelector('#tabs .ink')).transitionDuration]; })()");
+    const motion = await s.evalJs("(() => { const v = document.querySelector('#view > *'); const b = document.querySelector('button'); return [getComputedStyle(v).animationName, parseFloat(getComputedStyle(b).transitionDuration) > 0, getComputedStyle(document.querySelector('#sidebar .ink')).transitionDuration]; })()");
     if (motion[0] !== "rise" || !motion[1] || parseFloat(motion[2]) <= 0) fail(tab, "the page or the buttons do not animate: " + JSON.stringify(motion));
     await s.shot(`${ctx}-${tab}`);
   };
@@ -72,9 +72,9 @@ async function check(theme, width) {
     // a click on a table heading sorts that table, another click reverses it
     const sorted = await s.evalJs(`(() => { const d = document.querySelector('iframe').contentDocument; const th = d.querySelector('th.sortable'); if (!th) return 'no sortable heading'; th.click(); const a = th.getAttribute('aria-sort'); th.click(); return a + '/' + th.getAttribute('aria-sort'); })()`);
     if (!/^(ascending\/descending|descending\/ascending)$/.test(sorted)) fail("overview", "clicking a table heading did not sort: " + sorted);
-    // the underline under the tabs sits under the chosen one
-    const ink = await s.evalJs("(() => { const n = document.querySelector('#tabs'); const on = n.querySelector('button.on'), i = n.querySelector('.ink'); return [Math.abs(parseFloat(i.style.left) - on.offsetLeft), parseFloat(i.style.width) - on.offsetWidth]; })()");
-    if (ink[0] > 1 || Math.abs(ink[1]) > 1) fail("overview", "the tab underline is not under the chosen tab: " + JSON.stringify(ink));
+    // the highlight in the sidebar sits behind the chosen tab
+    const ink = await s.evalJs("(() => { const n = document.querySelector('#sidebar'); const on = n.querySelector('button.on'), i = n.querySelector('.ink'); return [Math.abs(parseFloat(i.style.top) - on.offsetTop), parseFloat(i.style.height) - on.offsetHeight]; })()");
+    if (ink[0] > 1 || Math.abs(ink[1]) > 1) fail("overview", "the sidebar highlight is not behind the chosen tab: " + JSON.stringify(ink));
     await s.evalJs("document.querySelector('main').scrollTop = 0");
   }));
 

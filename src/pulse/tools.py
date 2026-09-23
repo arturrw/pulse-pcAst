@@ -7,7 +7,7 @@ from pathlib import Path
 import psutil
 
 from . import ack, anomaly, binaries, db, netwatch, persistence, procwatch, scan, timeline, winhealth
-from .collectors import Collector, collect_disks
+from .collectors import Collector, battery_info, collect_disks, static_hardware_info
 
 _db_path = db.DEFAULT_DB
 
@@ -44,11 +44,17 @@ def _round(d: dict) -> dict:
 def current_status() -> dict:
     """Take a live snapshot of the computer right now: CPU, RAM, disk I/O activity
     (read/write MB/s - this is disk "load", not free space) and network rates,
-    GPU load/VRAM/temperature/power, and the top processes by CPU and memory."""
+    GPU load/VRAM/temperature/power, and the top processes by CPU and memory.
+    "system" also carries static hardware facts (cpu_name, cpu_cores_logical, cpu_cores_physical,
+    ram_total_mb, gpu_driver_version, hostname) for "what CPU/how many cores/how much RAM/what's
+    this PC's name" questions - never derive these from a percentage or estimate them, only report
+    what is here; a null field means that fact is not available. "battery" is percent/plugged_in,
+    or null on a desktop with no battery."""
     s = Collector().sample()
     procs = s["processes"]
     return {
-        "system": _round({k: v for k, v in s["system"].items() if k != "ts"}),
+        "system": _round({**{k: v for k, v in s["system"].items() if k != "ts"}, **static_hardware_info()}),
+        "battery": battery_info(),
         "gpus": [_round({k: v for k, v in g.items() if k not in ("ts", "idx")}) for g in s["gpus"]],
         "top_by_cpu": [_round({"name": p["name"], "pid": p["pid"], "cpu_percent": p["cpu_percent"], "rss_mb": p["rss_mb"]})
                        for p in sorted(procs, key=lambda p: p["cpu_percent"], reverse=True)[:8]],

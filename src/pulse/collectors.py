@@ -1,5 +1,7 @@
 """Read-only collectors for system, GPU, process and disk metrics."""
 import ipaddress
+import os
+import socket
 import time
 
 import psutil
@@ -15,6 +17,81 @@ except Exception:  # no NVIDIA driver / library
 MB = 1024**2
 GB = 1024**3
 TOP_PROCESSES = 15
+
+_cpu_name_cache: str | None = None
+
+
+def cpu_name() -> str | None:
+    """Friendly CPU model name (e.g. 'Intel(R) Core(TM) i7-10700K CPU @ 3.80GHz'), read once and cached -
+    it never changes while the process runs. None if unavailable (not Windows, no permission)."""
+    global _cpu_name_cache
+    if _cpu_name_cache is not None:
+        return _cpu_name_cache
+    try:
+        import winreg
+
+        key_path = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key_path) as key:
+            name, _ = winreg.QueryValueEx(key, "ProcessorNameString")
+        _cpu_name_cache = " ".join(name.split())  # collapse the extra internal spaces Windows stores
+    except (ImportError, OSError):
+        _cpu_name_cache = None
+    return _cpu_name_cache
+
+
+_gpu_driver_cache: str | None = None
+
+
+def gpu_driver_version() -> str | None:
+    """The NVIDIA driver version (one value for the whole system, not per GPU), cached like cpu_name.
+    None if there is no NVIDIA driver."""
+    global _gpu_driver_cache
+    if _gpu_driver_cache is not None:
+        return _gpu_driver_cache
+    if not _NVML:
+        return None
+    try:
+        v = pynvml.nvmlSystemGetDriverVersion()
+        _gpu_driver_cache = v.decode() if isinstance(v, bytes) else v
+    except Exception:
+        return None
+    return _gpu_driver_cache
+
+
+def hostname() -> str | None:
+    """This PC's Windows computer name, for 'which computer is this' style questions."""
+    try:
+        return os.environ.get("COMPUTERNAME") or socket.gethostname() or None
+    except OSError:
+        return None
+
+
+def battery_info() -> dict | None:
+    """Battery percent and whether it's charging, live (not cached - it changes). None on a desktop with
+    no battery. Deliberately not part of Collector.sample(): that dict feeds the fixed system_metrics
+    schema, and battery presence/absence must not depend on what hardware happens to be running this."""
+    try:
+        b = psutil.sensors_battery()
+    except Exception:
+        return None
+    if b is None:
+        return None
+    return {"percent": round(b.percent, 1), "plugged_in": b.power_plugged}
+
+
+def static_hardware_info() -> dict:
+    """CPU/RAM facts that never change while the machine is up (model name, core counts, total RAM,
+    GPU driver version, computer name). Kept separate from Collector.sample(): that dict is written to
+    system_metrics as a time series with a fixed schema, so it must only ever hold values that actually
+    vary from sample to sample."""
+    return {
+        "cpu_name": cpu_name(),
+        "cpu_cores_logical": psutil.cpu_count(logical=True),
+        "cpu_cores_physical": psutil.cpu_count(logical=False),
+        "ram_total_mb": psutil.virtual_memory().total / MB,
+        "gpu_driver_version": gpu_driver_version(),
+        "hostname": hostname(),
+    }
 
 
 def collect_gpus(ts: float) -> list[dict]:

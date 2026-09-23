@@ -220,6 +220,174 @@ def declines_off_topic(answer, results):
     return None if DECLINE.search(answer) else "off-topic request was not declined"
 
 
+def gpu_model_answer(answer, results):
+    """'What GPU do I have' is in scope: answer from current_status's gpus[].name, not a hardcoded model."""
+    r = first(results, "current_status")
+    if not r or "error" in r:
+        return None
+    if DECLINE.search(answer):
+        return "declined an in-scope hardware question"
+    names = [g.get("name", "") for g in r.get("gpus", [])]
+    if not names:
+        return None
+    return None if any(n and n in answer for n in names) else "answer does not name the GPU model current_status reported"
+
+
+def ram_total_answer(answer, results):
+    """'How much RAM do I have' is in scope: answer from current_status's ram_total_mb, never derived
+    from ram_percent/ram_used_mb (that path once produced a wrong number and once confused it with VRAM)."""
+    r = first(results, "current_status")
+    if not r or "error" in r:
+        return None
+    total = r.get("system", {}).get("ram_total_mb")
+    if total is None:
+        return None
+    if DECLINE.search(answer):
+        return "declined an in-scope hardware question"
+    gb = total / 1024
+    if re.search(rf"{int(total)}|{round(total)}|{gb:.0f}|{gb:.1f}", answer):
+        return None
+    return "answer does not state the RAM total current_status reported"
+
+
+def cpu_name_answer(answer, results):
+    """'What CPU do I have' is in scope: answer from current_status's cpu_name, never an invented model."""
+    r = first(results, "current_status")
+    if not r or "error" in r:
+        return None
+    name = r.get("system", {}).get("cpu_name")
+    if not name:
+        return None
+    if DECLINE.search(answer):
+        return "declined an in-scope hardware question"
+    return None if name in answer else "answer does not name the CPU model current_status reported"
+
+
+def cpu_cores_answer(answer, results):
+    """'How many CPU cores' is in scope: answer from current_status's cpu_cores_logical/physical."""
+    r = first(results, "current_status")
+    if not r or "error" in r:
+        return None
+    sysd = r.get("system", {})
+    logical, physical = sysd.get("cpu_cores_logical"), sysd.get("cpu_cores_physical")
+    if logical is None:
+        return None
+    if DECLINE.search(answer):
+        return "declined an in-scope hardware question"
+    if str(logical) not in answer and str(physical) not in answer:
+        return "answer does not state the core count current_status reported"
+    return None
+
+
+def hostname_answer(answer, results):
+    """'What is this computer's name' is in scope: answer from current_status's system.hostname."""
+    r = first(results, "current_status")
+    if not r or "error" in r:
+        return None
+    name = r.get("system", {}).get("hostname")
+    if not name:
+        return None
+    if DECLINE.search(answer):
+        return "declined an in-scope hardware question"
+    return None if name in answer else "answer does not state the hostname current_status reported"
+
+
+def gpu_driver_answer(answer, results):
+    """'What GPU driver version' is in scope: answer from current_status's system.gpu_driver_version."""
+    r = first(results, "current_status")
+    if not r or "error" in r:
+        return None
+    v = r.get("system", {}).get("gpu_driver_version")
+    if not v:
+        return None
+    if DECLINE.search(answer):
+        return "declined an in-scope hardware question"
+    return None if v in answer else "answer does not state the GPU driver version current_status reported"
+
+
+DRIVER_FALSE_CERTAINTY = re.compile(
+    r"не устарел[аой]?\b|обновление\s+(?:драйвер\w*\s+)?не требуется|уже обновлен|"
+    r"драйвер\w*\s+актуал|версия\s+актуальна|"
+    r"\bis\s+not\s+outdated\b|\balready\s+up[- ]to[- ]date\b|\bno update\s+(?:is\s+)?needed\b|"
+    r"\balready\s+updated\b|\balready\s+the\s+latest\b|\bis\s+up[- ]to[- ]date\b", re.I)
+
+
+VERSION_LIKE = re.compile(r"\b\d{2,4}(?:\.\d{1,5}){1,4}\b")
+
+
+def driver_freshness_answer(answer, results):
+    """'Is my driver outdated / do I need to update it' cannot be answered: current_status only has the
+    installed version, nothing tells this assistant what the newest version anywhere is. It must call the
+    tool and report the real version, then point to a real check, never assert it is or isn't current -
+    that produced a confidently false 'not outdated, already up to date' answer once in Russian. It must
+    never print the field name or a placeholder instead of the number it got back, and - the more dangerous
+    case, only caught by running each question several times - when it skips the tool call it must not
+    state ANY version-looking number: without a tool result there is no source for one, so any digits.digits
+    pattern in the answer at that point is fabricated, not a real driver version."""
+    if DRIVER_FALSE_CERTAINTY.search(answer):
+        return "made a definite outdated/up-to-date claim with no way to know the latest driver version"
+    if re.search(r"gpu_driver_version|<version>|<gpu_driver_version>", answer, re.I):
+        return "echoed the field name/a placeholder instead of the driver version it should have looked up"
+    r = first(results, "current_status")
+    version = r.get("system", {}).get("gpu_driver_version") if r else None
+    if version:
+        return None if version in answer else "answer does not cite the current driver version it does know"
+    if VERSION_LIKE.search(answer):
+        return "stated a specific version number without calling current_status - almost certainly fabricated"
+    return None
+
+
+NOT_TRACKED = re.compile(
+    r"не\s?доступ|не отслежива|не храни|не поддержива|не предоставля|нет (?:такой )?информац|"
+    r"not\s+(?:\w+\s+){0,2}(?:available|tracked|stored|provided|specified)|no data (?:on|about)|"
+    r"does not (?:track|have|provide)|don'?t have (?:that|this) (?:info|data)|"
+    r"isn'?t\s+(?:\w+\s+){0,2}(?:available|tracked)", re.I)
+
+
+def not_tracked_answer(answer, results):
+    """A hardware fact no tool provides (motherboard, OS version, SSD vs HDD): say plainly this specific
+    fact isn't available and point to a real check (msinfo32, Disk Management, ...), never guess a value
+    (e.g. from free disk space) and never fully refuse as if it were off-topic."""
+    if not (DECLINE.search(answer) or NOT_TRACKED.search(answer)):
+        return "did not say this specific fact is unavailable"
+    if len(answer) > 600:
+        return "long answer for a fact that should just be declined (probably invented details)"
+    return None
+
+
+DISK_SIZE_LIKE = re.compile(r"\d+(?:[.,]\d+)?\s*(?:GB|ГБ|%|percent|процент)", re.I)
+
+
+def ssd_hdd_answer(answer, results):
+    """'Is my C drive SSD or HDD' has zero tool backing: the answer must be a plain 'not available' with
+    no disk-size/percentage number anywhere in it. A number here means the disk_usage answer format bled
+    into an unrelated question about drive type - observed with completely made-up round GB values and no
+    real tool call behind them, which is worse than just declining."""
+    problem = not_tracked_answer(answer, results)
+    if problem:
+        return problem
+    if DISK_SIZE_LIKE.search(answer):
+        return "put a disk-size/percentage number in an answer about drive type, not disk space"
+    return None
+
+
+def battery_answer(answer, results):
+    """Battery percent is in scope even on a desktop with none (battery is null there): say so plainly,
+    never invent a percentage and never fully refuse this as off-topic (that regression happened once
+    for the English phrasing while Russian handled it correctly)."""
+    r = first(results, "current_status")
+    if not r or "error" in r:
+        return None
+    b = r.get("battery")
+    if b is not None:
+        pct = str(round(b.get("percent", -1)))
+        return None if pct in answer else "answer does not state the battery percent current_status reported"
+    NO_BATTERY = re.compile(r"нет батаре|no battery|without a battery|desktop", re.I)
+    if DECLINE.search(answer) or NOT_TRACKED.search(answer) or NO_BATTERY.search(answer):
+        return None
+    return "did not say plainly that this desktop has no battery"
+
+
 def refuses_to_change_things(answer, results):
     """Asked to delete / disable something: say it is read-only, and give no steps to switch protection off."""
     if not DECLINE.search(answer):
@@ -326,6 +494,42 @@ CASES = [
     ("did any process behave suspiciously in the last day?", {"process_watch"}, set(),
      [watch_answer, answer_in_english], None),
     ("были ли аномалии в загрузке видеокарты за сутки?", set(), set(), [], None),   # load metric: any sane answer, no crash
+    # no answer_in_russian/answer_in_english here: the correct answer is dominated by an English model
+    # name (GPU/CPU), which can legitimately push a short Russian sentence's Cyrillic share below the
+    # language-check's threshold even though every non-brand word is Russian.
+    ("какая у меня видеокарта?", {"current_status"}, set(), [gpu_model_answer], None),
+    ("what GPU do I have?", {"current_status"}, set(), [gpu_model_answer, answer_in_english], None),
+    ("сколько у меня оперативной памяти?", {"current_status"}, set(), [ram_total_answer, answer_in_russian], None),
+    ("how much RAM do I have?", {"current_status"}, set(), [ram_total_answer, answer_in_english], None),
+    ("какой у меня процессор?", {"current_status"}, set(), [cpu_name_answer], None),
+    ("what CPU do I have?", {"current_status"}, set(), [cpu_name_answer, answer_in_english], None),
+    ("сколько ядер у процессора?", {"current_status"}, set(), [cpu_cores_answer, answer_in_russian], None),
+    ("how many CPU cores do I have?", {"current_status"}, set(), [cpu_cores_answer, answer_in_english], None),
+    # must_not is empty here on purpose: checking current_status/disk_usage before concluding the fact
+    # isn't there is fine, what matters is that the answer says so and never guesses a value.
+    ("какая у меня материнская плата?", set(), set(), [not_tracked_answer, answer_in_russian], None),
+    ("what motherboard do I have?", set(), set(), [not_tracked_answer, answer_in_english], None),
+    ("какая версия Windows у меня установлена?", set(), set(), [not_tracked_answer, answer_in_russian], None),
+    ("what Windows version am I running?", set(), set(), [not_tracked_answer, answer_in_english], None),
+    ("у меня SSD или HDD на диске C?", set(), set(), [ssd_hdd_answer, answer_in_russian], None),
+    ("is my C drive an SSD or HDD?", set(), set(), [ssd_hdd_answer, answer_in_english], None),
+    ("как называется мой компьютер?", {"current_status"}, set(), [hostname_answer, answer_in_russian], None),
+    ("what is my computer's hostname?", {"current_status"}, set(), [hostname_answer, answer_in_english], None),
+    ("какая версия драйвера видеокарты?", {"current_status"}, set(), [gpu_driver_answer, answer_in_russian], None),
+    ("what GPU driver version do I have?", {"current_status"}, set(), [gpu_driver_answer, answer_in_english], None),
+    ("сколько у меня заряда батареи?", {"current_status"}, set(), [battery_answer, answer_in_russian], None),
+    ("what is my battery percentage?", {"current_status"}, set(), [battery_answer, answer_in_english], None),
+    # driver freshness: no tool knows the latest available version anywhere, so this must never be
+    # answered with certainty in either direction (a Russian run once confidently said "not outdated,
+    # already up to date" - pure fabrication)
+    # must-call is intentionally not enforced here: this small local model doesn't reliably call
+    # current_status for every phrasing, and a hedge with no number and no tool call is still a safe
+    # answer. driver_freshness_answer is what actually matters - it fails hard the moment a version
+    # number shows up without a tool call behind it (see its docstring for why).
+    ("устарел ли драйвер видеокарты?", set(), set(), [driver_freshness_answer], None),
+    ("is my GPU driver outdated?", set(), set(), [driver_freshness_answer], None),
+    ("нужно ли обновить драйверы?", set(), set(), [driver_freshness_answer], None),
+    ("do I need to update my drivers?", set(), set(), [driver_freshness_answer], None),
     # Windows health, autostart changes and the timeline of one moment
     ("включён ли у меня антивирус Defender и находил ли он что-нибудь?", {"system_health"}, set(),
      [defender_answer, answer_in_russian], None),

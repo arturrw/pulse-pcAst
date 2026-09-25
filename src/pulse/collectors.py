@@ -156,6 +156,8 @@ class Collector:
         by_pid = {p.pid: p for p in procs}
         for p in procs:
             try:
+                if p.create_time() != p.info["create_time"]:
+                    continue   # this pid was recycled by a new process during the sleep above
                 rows.append(
                     {
                         "ts": ts,

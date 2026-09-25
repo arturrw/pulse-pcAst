@@ -11,11 +11,13 @@ import urllib.request
 from pathlib import Path
 from types import SimpleNamespace
 
-from pulse import db, persistence, setup_tasks, webui, winhealth
+from pulse import cs2settings, db, persistence, setup_tasks, webui, winhealth
 
 winhealth.read_raw = lambda hours: {}                 # never read this machine's event logs, registry or autostart
 winhealth.read_defender_policy = lambda: {}
 persistence.read_items = lambda: []
+cs2settings.video_settings_path = lambda: None        # never touch this machine's real Steam/CS2 files
+cs2settings.cs2_running = lambda: False
 
 
 class FakeClient:
@@ -250,6 +252,91 @@ def test_the_assistant_keeps_the_conversation_and_says_what_is_wrong_when_the_mo
         assert code == 503 and "ollama pull" in r["error"]
     finally:
         down.stop()
+
+
+class ToolCallClient:
+    """First call: the model calls one tool. Second call: it answers from the tool result."""
+
+    def __init__(self, tool_name, tool_args, answer="done"):
+        self.tool_name, self.tool_args, self.answer = tool_name, tool_args, answer
+        self.models, self.calls = ("qwen3:8b",), 0
+
+    def list(self):
+        return SimpleNamespace(models=[SimpleNamespace(model=m) for m in self.models])
+
+    def chat(self, model, messages, tools, think, options):
+        self.calls += 1
+        if self.calls == 1:
+            call = SimpleNamespace(function=SimpleNamespace(name=self.tool_name, arguments=self.tool_args))
+            return SimpleNamespace(message=SimpleNamespace(content=None, tool_calls=[call]))
+        return SimpleNamespace(message=SimpleNamespace(content=self.answer, tool_calls=None))
+
+
+def test_propose_cs2_setting_is_surfaced_as_a_proposed_action_never_as_already_applied():
+    tmp = Path(tempfile.mkdtemp()) / "cs2_video.txt"
+    tmp.write_text('"setting.msaa_samples"\t\t"4"\n"setting.videocfg_shadow_quality"\t\t"2"\n', encoding="utf-8")
+    real_path = cs2settings.video_settings_path
+    cs2settings.video_settings_path = lambda: tmp
+    try:
+        client = ToolCallClient("propose_cs2_setting", {"key": "setting.videocfg_shadow_quality", "value": "1"})
+        s = Running(client=client)
+        try:
+            code, r = s.api("POST", "ask", {"message": "lower my shadows"})
+            assert code == 200 and r["tools"] == ["propose_cs2_setting"]
+            action = r["proposed_action"]
+            assert action == {"kind": "cs2_setting", "key": "setting.videocfg_shadow_quality", "value": "1",
+                              "label": "medium", "current_value": "2", "current_label": "high", "cs2_running": False,
+                              "note": "not applied yet: the user must click the button"}
+        finally:
+            s.stop()
+    finally:
+        cs2settings.video_settings_path = real_path
+
+
+def test_propose_cs2_setting_with_a_bad_value_reports_an_error_and_no_proposed_action():
+    client = ToolCallClient("propose_cs2_setting", {"key": "setting.msaa_samples", "value": "3"})
+    s = Running(client=client)
+    try:
+        code, r = s.api("POST", "ask", {"message": "set msaa to 3"})
+        assert code == 200 and "proposed_action" not in r
+    finally:
+        s.stop()
+
+
+def test_cs2_apply_and_revert_round_trip_through_the_api():
+    tmp = Path(tempfile.mkdtemp()) / "cs2_video.txt"
+    original = '"setting.msaa_samples"\t\t"4"\n"setting.videocfg_shadow_quality"\t\t"2"\n'
+    tmp.write_text(original, encoding="utf-8")
+    real_path = cs2settings.video_settings_path
+    cs2settings.video_settings_path = lambda: tmp
+    try:
+        s = Running()
+        try:
+            code, r = s.api("POST", "cs2_apply", {"key": "setting.msaa_samples", "value": "2"})
+            assert code == 200 and r["previous"] == "4" and r["applied"] == "2"
+            assert '"setting.msaa_samples"\t\t"2"' in tmp.read_text(encoding="utf-8")
+            code, r2 = s.api("POST", "cs2_revert", {"backup": r["backup"]})
+            assert code == 200 and tmp.read_text(encoding="utf-8") == original
+            assert s.api("POST", "cs2_apply", {"key": "setting.nope", "value": "1"})[0] == 400
+            assert s.api("POST", "cs2_revert", {"backup": "../../secret.txt"})[0] == 400
+        finally:
+            s.stop()
+    finally:
+        cs2settings.video_settings_path = real_path
+
+
+def test_cs2_apply_refuses_while_cs2_is_running():
+    real_running = cs2settings.cs2_running
+    cs2settings.cs2_running = lambda: True
+    try:
+        s = Running()
+        try:
+            code, r = s.api("POST", "cs2_apply", {"key": "setting.msaa_samples", "value": "2"})
+            assert code == 400 and "running" in r["error"]
+        finally:
+            s.stop()
+    finally:
+        cs2settings.cs2_running = real_running
 
 
 def test_saving_settings_reinstalls_only_the_installed_job_whose_schedule_changed():

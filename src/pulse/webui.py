@@ -5,7 +5,9 @@ checked: the Host must be the local address (DNS-rebinding), a POST's Origin mus
 secret token that is random per run (given once in the address, kept in an HttpOnly SameSite=Strict cookie). Pages are
 served with a content policy that blocks every script but the app's own, and the app builds its screen with textContent
 only, so a hostile process name cannot inject anything. Only a fixed list of actions exists: read the tools, accept or
-forget a finding, ask the assistant, install or remove our own three background jobs. It is read-only otherwise.
+forget a finding, ask the assistant, install or remove our own three background jobs, and - the one setting this app
+ever writes on the user's behalf - apply or revert one CS2 video setting, always from an explicit button click, never
+from the assistant's own tool call. Everything else is read-only.
 The server stops when the browser tab has been closed for a few minutes."""
 import json
 import secrets
@@ -17,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ack, alerts, chat, chatstore, db, digest, explain, gamelib, games, paths, report, settings, setup_tasks, tools
+from . import ack, alerts, chat, chatstore, cs2settings, db, digest, explain, gamelib, games, paths, report, settings, setup_tasks, tools
 from .webui_page import render_page
 
 MAX_BODY = 16 * 1024
@@ -356,6 +358,23 @@ class App:
             raise ApiError(r["error"])
         return {"before": r["before"], "after": r["after"], **explain.game_compare_text(r)}
 
+    # ---- CS2 video settings: the only setting this app ever writes, and only from a button click
+    def cs2_settings(self) -> dict:
+        return cs2settings.read_settings()
+
+    def cs2_apply(self, key, value) -> dict:
+        try:
+            return cs2settings.apply_setting(_clean_id(key, "key"), _clean_id(str(value), "value"),
+                                             self.db_path.parent / "cs2_backups")
+        except cs2settings.Cs2Error as e:
+            raise ApiError(str(e)) from None
+
+    def cs2_revert(self, backup) -> dict:
+        try:
+            return cs2settings.revert(self.db_path.parent / "cs2_backups", _clean_id(backup, "backup"))
+        except cs2settings.Cs2Error as e:
+            raise ApiError(str(e)) from None
+
     # ---- the assistant
     def _client(self):
         if self._client_factory:
@@ -391,14 +410,27 @@ class App:
             history.append({"role": "user", "content": message})
         title = self.chats.add(cid, "me", message)
         used: list[str] = []
+        turn_start = len(history)
         try:
             answer = chat.ask(self._client(), self.model, history, False, 8192, on_tool=lambda n, a: used.append(n))
         except Exception as e:   # noqa: BLE001 - shown to the user instead of a broken page
             raise ApiError(f"the model failed: {type(e).__name__}: {e}"[:300], 502) from None
+        proposed = None   # the last propose_cs2_setting call this turn that did not itself error
+        for m in history[turn_start:]:
+            if isinstance(m, dict) and m.get("role") == "tool" and m.get("tool_name") == "propose_cs2_setting":
+                try:
+                    payload = json.loads(m["content"])
+                except ValueError:
+                    continue
+                if "error" not in payload:
+                    proposed = payload
         with self._lock:
             del history[1:-KEEP_MESSAGES]            # the system prompt stays, the conversation is trimmed
         self.chats.add(cid, "bot", answer, used)
-        return {"answer": answer, "tools": used, "chat": cid, "title": title}
+        result = {"answer": answer, "tools": used, "chat": cid, "title": title}
+        if proposed is not None:
+            result["proposed_action"] = {"kind": "cs2_setting", **proposed}
+        return result
 
     def reset_chat(self, session: str) -> dict:
         """A request without a chat id starts a new conversation next time; the old one stays in the list."""
@@ -607,6 +639,9 @@ class Handler(BaseHTTPRequestHandler):
             ("GET", "compare"): lambda: app.game_compare(q("a"), q("b")),
             ("GET", "batch"): lambda: app.game_batch(q("game"), q("batch")),
             ("GET", "programs"): lambda: app.programs(),
+            ("GET", "cs2_settings"): lambda: app.cs2_settings(),
+            ("POST", "cs2_apply"): lambda: app.cs2_apply(body.get("key"), body.get("value")),
+            ("POST", "cs2_revert"): lambda: app.cs2_revert(body.get("backup")),
             ("GET", "anomalies"): lambda: app.anomalies(q("hours", "24")),
             ("POST", "game_add"): lambda: app.game_add(body.get("process"), body.get("title")),
             ("POST", "game_remove"): lambda: app.game_remove(body.get("process")),

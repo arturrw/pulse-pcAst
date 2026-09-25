@@ -262,6 +262,34 @@ async function overview(out) {
     reportPart());
 }
 
+// ---- the one thing the assistant can propose but never do itself: a CS2 video setting change
+const CS2_LABELS = { "setting.msaa_samples": "MSAA", "setting.videocfg_shadow_quality": "Shadow quality" };
+function cs2Card(action) {
+  const name = CS2_LABELS[action.key] || action.key;
+  const status = h("p", { class: "mute" }, action.cs2_running ? "Close CS2 first: it overwrites this on exit." : "Not applied yet.");
+  const applyBtn = h("button", { class: "primary" }, "Apply");
+  const cancelBtn = h("button", {}, "Cancel");
+  const box = h("div", { class: "card" }, h("div", {}, name + ": " + action.current_label + " → " + action.label),
+    status, h("div", { class: "row" }, applyBtn, cancelBtn));
+  cancelBtn.addEventListener("click", () => box.remove());
+  applyBtn.addEventListener("click", async () => {
+    applyBtn.disabled = true; cancelBtn.disabled = true;
+    try {
+      const r = await api("cs2_apply", { key: action.key, value: action.value });
+      const undoBtn = h("button", {}, "Undo");
+      undoBtn.addEventListener("click", async () => {
+        undoBtn.disabled = true;
+        try { await api("cs2_revert", { backup: r.backup }); fill(box, h("p", { class: "mute" }, "Reverted to " + r.previous_label + ".")); }
+        catch (e) { box.append(err(e)); undoBtn.disabled = false; }
+      });
+      fill(box, h("div", {}, "Applied: " + r.previous_label + " → " + r.applied_label + "."), h("div", { class: "row" }, undoBtn));
+    } catch (e) {
+      box.append(err(e)); applyBtn.disabled = false; cancelBtn.disabled = false;
+    }
+  });
+  return box;
+}
+
 let chatId = null;   // the open conversation (null = a new one, created when the first question is sent)
 async function ask(out) {
   const st = (await api("setup")).ollama;
@@ -288,7 +316,9 @@ async function ask(out) {
   async function send(text) {
     text = (text || input.value).trim(); if (!text) return; input.value = ""; add("me", text);
     btn.disabled = true; const wait = add("bot", "Thinking…");
-    try { const r = await api("ask", { message: text, chat: chatId }); wait.remove(); add("bot", r.answer, r.tools); chatId = r.chat; await drawList(); }
+    try { const r = await api("ask", { message: text, chat: chatId }); wait.remove(); add("bot", r.answer, r.tools);
+      if (r.proposed_action && r.proposed_action.kind === "cs2_setting") log.append(cs2Card(r.proposed_action));
+      chatId = r.chat; await drawList(); }
     catch (e) { wait.remove(); log.append(err(e)); }
     btn.disabled = false; input.focus();
   }

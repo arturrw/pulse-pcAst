@@ -391,6 +391,44 @@ def game_sessions_compare(before: str, after: str) -> dict:
     return _round_deep(out)
 
 
+def cs2_video_settings() -> dict:
+    """CS2's own current video settings that this app knows how to change (MSAA, shadow quality): value, label
+    and every allowed option for each. `available: false` means CS2's settings file was not found (Steam not
+    installed, or CS2 was never launched on this account) - say that plainly, do not guess a value."""
+    from . import cs2settings
+
+    return cs2settings.read_settings()
+
+
+def propose_cs2_setting(key: str, value: str) -> dict:
+    """Prepare a CS2 video setting change for the user to review and apply themselves with a button in the app;
+    this NEVER writes anything by itself. Call cs2_video_settings first so the proposal is against the real
+    current value. After calling this, tell the user what would change and that a button appeared to apply or
+    cancel it - never say the setting was already changed.
+
+    Args:
+        key: setting.msaa_samples or setting.videocfg_shadow_quality (from cs2_video_settings).
+        value: One of that setting's option values (from cs2_video_settings' `options`), e.g. "1" for shadow
+            quality medium.
+    """
+    from . import cs2settings
+
+    if key not in cs2settings.SETTINGS:
+        return {"error": f"'{key}' is not a setting this app changes", "changeable_settings": list(cs2settings.SETTINGS)}
+    value = str(value)
+    options = cs2settings.SETTINGS[key]
+    if value not in options:
+        return {"error": f"'{value}' is not a valid value for {key}", "options": options}
+    current = cs2settings.read_settings()
+    if not current["available"]:
+        return {"error": current["reason"]}
+    return {"key": key, "value": value, "label": options[value],
+            "current_value": current["settings"][key]["value"], "current_label": current["settings"][key]["label"],
+            "cs2_running": current["cs2_running"],
+            "note": ("CS2 is running: the button will refuse until it is closed, otherwise CS2 overwrites this "
+                     "on exit" if current["cs2_running"] else "not applied yet: the user must click the button")}
+
+
 def _recording_span(path: Path) -> tuple[float, float] | None:
     """(start, end) of a PresentMon recording in local epoch seconds: end = file modification time, start = end minus
     the capture length (last minus first row). PresentMon writes its own clock, so only the length is trusted."""
@@ -613,5 +651,6 @@ def _round_deep(x):
 
 
 TOOLS = [current_status, disk_usage, top_processes, metrics_history, disk_forecast, largest_folders,
-         game_sessions, game_session_report, game_sessions_compare, process_watch, system_health, startup_changes, what_happened]
+         game_sessions, game_session_report, game_sessions_compare, cs2_video_settings, propose_cs2_setting,
+         process_watch, system_health, startup_changes, what_happened]
 TOOL_MAP = {f.__name__: f for f in TOOLS}

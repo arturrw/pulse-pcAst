@@ -144,7 +144,7 @@ class Collector:
         self.last_exes: list[dict] = []
 
     def _processes(self, ts: float, window: float = 1.0) -> list[dict]:
-        procs = [p for p in psutil.process_iter(["pid", "name"]) if p.pid != 0]  # 0 = System Idle
+        procs = [p for p in psutil.process_iter(["pid", "name", "create_time"]) if p.pid != 0]  # 0 = System Idle
         for p in procs:
             try:
                 p.cpu_percent(None)
@@ -176,12 +176,18 @@ class Collector:
 
     def _exes(self, rows: list[dict], by_pid: dict, ts: float) -> list[dict]:
         """(name, file path) of the recorded processes. The path of a running process never changes, so it is
-        looked up once per process (pid + start time); protected system processes refuse it and are skipped."""
+        looked up once per process (pid + start time); protected system processes refuse it and are skipped.
+        `p.info["create_time"]` was read at the same snapshot as the name (both came from the same
+        `process_iter` call); re-checking it against a fresh `create_time()` before trusting `exe()` catches
+        the PID having been recycled by a new process in between, which would otherwise pair the old name with
+        the new process's path (e.g. a legitimate app misreported as "svchost.exe")."""
         out = {}
         for r in rows:
             p = by_pid.get(r["pid"])
             try:
-                key = (r["pid"], p.create_time())
+                if p.create_time() != p.info["create_time"]:
+                    continue
+                key = (r["pid"], p.info["create_time"])
                 if key not in self._exe_cache:
                     self._exe_cache[key] = p.exe()
                 exe = self._exe_cache[key]

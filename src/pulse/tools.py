@@ -519,8 +519,9 @@ def process_watch(minutes: int = 1440) -> dict:
     using far more CPU than it usually does (or a lot of CPU with nothing to compare to), or one whose memory keeps
     growing. This is a behavioral check, NOT an antivirus: only names, CPU and memory of the heaviest processes are
     recorded (no file path, signature or network use), so it cannot say whether anything is malicious and a quiet
-    process is invisible. Never call a process malware or safe from this; report what stands out and its
-    limits. `confidence` is low while there is under 24 h of recorded history: then "never recorded" is weak evidence.
+    process is invisible. suspect_files also flags a heavy program started through a command/script program
+    (PowerShell, cmd, ...) by a document program or a browser; `started_by` is its parents, nearest first.
+    Never call a process malware or safe from this; report what stands out and its limits. `confidence` is low while there is under 24 h of recorded history: then "never recorded" is weak evidence.
 
     Args:
         minutes: How many minutes of recent history to examine (older history is the baseline). The default is one

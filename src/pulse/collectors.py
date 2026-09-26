@@ -17,6 +17,22 @@ except Exception:  # no NVIDIA driver / library
 MB = 1024**2
 GB = 1024**3
 TOP_PROCESSES = 15
+CHAIN_DEPTH = 4         # parents recorded above each process ("powershell.exe < chrome.exe < explorer.exe")
+
+
+def parent_chain(pid: int, table: dict[int, tuple[str, float, int]], depth: int = CHAIN_DEPTH) -> list[str]:
+    """Names of the parents of `pid`, nearest first, from {pid: (name, create_time, ppid)}. A parent that started
+    after its child is a newer process that reused the pid, so the chain stops there instead of naming a stranger."""
+    names: list[str] = []
+    _, ctime, ppid = table[pid]
+    for _ in range(depth):
+        parent = table.get(ppid)
+        if parent is None or ppid == pid or parent[1] > ctime:
+            break
+        names.append(parent[0])
+        pid, (_, ctime, ppid) = ppid, parent
+    return names
+
 
 _cpu_name_cache: str | None = None
 
@@ -180,13 +196,18 @@ class Collector:
         self._prev_disk = psutil.disk_io_counters()
         self._prev_net = psutil.net_io_counters()
         psutil.cpu_percent(None)
-        self._exe_cache: dict[tuple, str] = {}
+        self._exe_cache: dict[tuple, tuple[str, str]] = {}
+        self._prev_table: dict[int, tuple[str, float, int]] = {}
         self.last_exes: list[dict] = []
         self.last_names: set[str] = set()
 
     def _processes(self, ts: float, window: float = 1.0) -> list[dict]:
-        procs = [p for p in psutil.process_iter(["pid", "name", "create_time"]) if p.pid != 0]  # 0 = System Idle
+        procs = [p for p in psutil.process_iter(["pid", "name", "create_time", "ppid"]) if p.pid != 0]  # 0 = System Idle
         self.last_names = {p.info["name"] for p in procs if p.info["name"]}
+        # parents are named from this sample plus the previous one, so a launcher that has exited since (a script
+        # that started a program and quit) still shows up in the chain if it lived long enough to be seen once
+        now_table = {p.pid: (p.info["name"] or "?", p.info["create_time"] or 0.0, p.info["ppid"] or 0) for p in procs}
+        table, self._prev_table = {**self._prev_table, **now_table}, now_table
         for p in procs:
             try:
                 p.cpu_percent(None)
@@ -215,11 +236,11 @@ class Collector:
         top_ids = {r["pid"] for r in top}
         top += [r for r in sorted(rows, key=lambda r: r["rss_mb"], reverse=True)[:TOP_PROCESSES]
                 if r["pid"] not in top_ids]
-        self.last_exes = self._exes(top, by_pid, ts)
+        self.last_exes = self._exes(top, by_pid, ts, table)
         return top
 
-    def _exes(self, rows: list[dict], by_pid: dict, ts: float) -> list[dict]:
-        """(name, file path) of the recorded processes. The path of a running process never changes, so it is
+    def _exes(self, rows: list[dict], by_pid: dict, ts: float, table: dict | None = None) -> list[dict]:
+        """(name, file path, parent chain) of the recorded processes. The path of a running process never changes, so it is
         looked up once per process (pid + start time); protected system processes refuse it and are skipped.
         `p.info["create_time"]` was read at the same snapshot as the name (both came from the same
         `process_iter` call); re-checking it against a fresh `create_time()` before trusting `exe()` catches
@@ -233,12 +254,13 @@ class Collector:
                     continue
                 key = (r["pid"], p.info["create_time"])
                 if key not in self._exe_cache:
-                    self._exe_cache[key] = p.exe()
-                exe = self._exe_cache[key]
+                    chain = parent_chain(r["pid"], table) if table and r["pid"] in table else []
+                    self._exe_cache[key] = (p.exe(), " < ".join(chain))
+                exe, chain = self._exe_cache[key]
             except (psutil.Error, AttributeError, OSError):
                 continue
             if exe:
-                out[(r["name"], exe)] = {"ts": ts, "name": r["name"], "exe": exe}
+                out[(r["name"], exe, chain)] = {"ts": ts, "name": r["name"], "exe": exe, "chain": chain}
         if len(self._exe_cache) > 5000:   # pids come and go; keep the cache from growing for weeks
             self._exe_cache.clear()
         return list(out.values())

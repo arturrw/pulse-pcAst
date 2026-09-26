@@ -231,7 +231,8 @@ class App:
         if "error" not in watch:
             for f in watch["suspect_files"]:
                 info.append({"id": None, "source": "Processes", "severity": f["severity"], "title": f["name"],
-                             "detail": "; ".join(f["reasons"]) + f" ({f['exe']})", "accepted": False})
+                             "detail": "; ".join(f["reasons"]) + f" ({f['exe']}"
+                             + (f", started by {f['started_by']})" if f.get("started_by") else ")"), "accepted": False})
             net = watch.get("network", {})
             for n in net.get("suspicious_ports", []):
                 info.append({"id": None, "source": "Processes", "severity": "medium", "title": f"{n['name']} on port {n['port']}",

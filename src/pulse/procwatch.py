@@ -1,8 +1,9 @@
 """Behavioral check of the process history: which processes act unusually against their own past.
 
-This is NOT an antivirus and cannot say whether anything is malicious. The collector stores only pid, name, CPU
-and memory of the heaviest processes (top by CPU plus top by memory, ~26 per sample): no file path, signature,
-parent, command line or per-process network. So it can only flag things that are heavy enough to be recorded:
+This is NOT an antivirus and cannot say whether anything is malicious. It works from pid, name, CPU and memory of
+the heaviest processes (top by CPU plus top by memory, ~26 per sample); their file, signature, parents and network
+use are judged elsewhere (binaries, netwatch), and command lines are never recorded. So it can only flag things
+that are heavy enough to be recorded:
   - a name that appears in the history for the first time,
   - a process using far more CPU than it usually does (or a lot, with no history to compare to),
   - a process whose memory keeps growing.

@@ -192,7 +192,8 @@ def watch(hours: float) -> str:
     if "error" in r:
         return ""
     rows = [[f"<span class='warn'>{escape(x['name'])}</span>", escape("; ".join(x["reasons"])),
-             escape(x["signature"]) + (f" ({escape(x['signer'][:40])})" if x["signer"] else ""), escape(x["exe"])]
+             escape(x["signature"]) + (f" ({escape(x['signer'][:40])})" if x["signer"] else ""),
+             escape(x["exe"]) + (f"<br><span class='mute'>started by {escape(x['started_by'])}</span>" if x.get("started_by") else "")]
             for x in r.get("suspect_files", [])]
     net = r.get("network", {})
     rows += [[f"<span class='warn'>{escape(n['name'])}</span>", "suspicious file is using the network",

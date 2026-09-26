@@ -131,7 +131,8 @@ def check_processes(now: float) -> list[Alert]:
     for f in r["suspect_files"]:
         if f["severity"] == "high":
             out.append(Alert(f"file-{f['exe']}", "high", f"Suspicious file: {f['name']}",
-                             f"{'; '.join(f['reasons'])}. Path: {f['exe']}. Odd is not proof: check it before "
+                             f"{'; '.join(f['reasons'])}. Path: {f['exe']}"
+                             + (f", started by {f['started_by']}" if f.get("started_by") else "") + ". Odd is not proof: check it before "
                              "trusting or deleting it (Task Manager > Open file location, a Defender scan)."))
     net = r.get("network", {})
     for n in net.get("from_suspicious_files", []):

@@ -85,6 +85,10 @@ powershell -File scripts\autostart.ps1 remove
 - **File** (`binaries.py`): a Windows system name running from the wrong folder, a program in
   Downloads/Temp/Public/Recycle Bin, or a broken/untrusted signature (`Get-AuthenticodeSignature`,
   cached, checked again only on change).
+- **Launch** (`binaries.py`): who started the program. PowerShell/cmd/wscript/mshta... started by an
+  Office program or a PDF reader (high: the shape of a macro), or PowerShell/wscript/mshta... started
+  by a browser (medium), including a program launched through them ("excel.exe → powershell.exe →
+  x.exe"). The parents are read once per recorded process; a launcher that lived under ~30 s is missed.
 - **Network** (`netwatch.py`): a suspicious file connecting out, a port typical of mining
   pools/Tor/IRC, a program that started listening, or one that suddenly talks to a new destination
   after a stable pattern (judged only after 24 h; no traffic volume, no content).

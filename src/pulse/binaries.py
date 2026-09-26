@@ -19,6 +19,17 @@ SYSTEM_NAMES["explorer.exe"] = ("\\windows\\explorer.exe",)
 # Folders a normal program is not installed into, but where downloaded or dropped files land.
 RISKY_DIRS = ("\\appdata\\local\\temp\\", "\\windows\\temp\\", "\\downloads\\", "\\users\\public\\", "\\$recycle.bin\\")
 
+# Programs that run commands or scripts. Started by a document or a web page, they are how a macro or a download
+# gets its foot in the door ("excel.exe -> powershell.exe -> miner.exe"); started by the user from Explorer they are normal.
+SCRIPT_HOSTS = {"powershell.exe", "pwsh.exe", "cmd.exe", "wscript.exe", "cscript.exe", "mshta.exe", "rundll32.exe",
+                "regsvr32.exe", "certutil.exe", "bitsadmin.exe"}
+DOCUMENT_APPS = {"winword.exe", "excel.exe", "powerpnt.exe", "outlook.exe", "onenote.exe", "mspub.exe", "msaccess.exe",
+                 "acrord32.exe", "acrobat.exe", "foxitpdfreader.exe"}
+BROWSERS = {"chrome.exe", "msedge.exe", "firefox.exe", "opera.exe", "brave.exe", "vivaldi.exe", "iexplore.exe"}
+# Chromium browsers start extension helpers (password managers and the like) through "cmd.exe /c", so under a
+# browser cmd.exe is normal and only the other script programs count.
+BROWSER_SCRIPT_HOSTS = SCRIPT_HOSTS - {"cmd.exe"}
+
 BAD_SIGNATURES = {"HashMismatch": "signature is broken: the file was changed after it was signed",
                   "NotTrusted": "signed by a certificate Windows does not trust",
                   "Invalid": "signature is invalid"}
@@ -46,6 +57,22 @@ def location_flags(name: str, exe: str) -> list[str]:
             flags.append(f"runs from {d.strip(chr(92))}, where downloaded or dropped files land")
             break
     return flags
+
+
+def launch_flags(name: str, chain: str) -> tuple[list[str], str | None]:
+    """Reasons the way a process was started is odd, and their severity ("high" from a document, "medium" from a
+    browser, None: nothing odd). `chain` is its parents nearest first, joined by " < "."""
+    names = [name.lower()] + [n.lower() for n in chain.split(" < ") if n]
+    flags, severity = [], None
+    for i, (child, parent) in enumerate(zip(names, names[1:])):
+        if not ((parent in DOCUMENT_APPS and child in SCRIPT_HOSTS) or (parent in BROWSERS and child in BROWSER_SCRIPT_HOSTS)):
+            continue
+        doc = parent in DOCUMENT_APPS
+        what = "a document program: a classic sign of a macro" if doc else "a web browser"
+        flags.append(f"{name} (runs commands and scripts) was started by {parent}, {what}" if i == 0 else
+                     f"started through {child} (runs commands and scripts), which was started by {parent}, {what}")
+        severity = "high" if doc or severity == "high" else "medium"
+    return flags, severity
 
 
 def check_signatures(paths: list[str]) -> dict[str, tuple[str, str]]:
@@ -105,6 +132,10 @@ def assess(conn, since: float) -> dict:
     high: a disguise (system name from the wrong folder), a broken signature, or an unsigned file in a download/temp
     folder. medium: signed but from such a folder, or signed by a certificate Windows does not trust."""
     rows = conn.execute("SELECT name, exe FROM process_exes WHERE last_seen >= ?", (since,)).fetchall()
+    chains: dict[tuple, list[str]] = {}
+    for name, exe, chain in conn.execute("SELECT name, exe, chain FROM process_parents WHERE last_seen >= ? "
+                                         "ORDER BY last_seen DESC", (since,)):
+        chains.setdefault((name, exe), []).append(chain)
     known_names = {n for (n,) in conn.execute("SELECT DISTINCT name FROM process_snapshots WHERE ts >= ?", (since,))}
     findings, unsigned = [], 0
     for name, exe in rows:
@@ -119,11 +150,17 @@ def assess(conn, since: float) -> dict:
             reasons.append(BAD_SIGNATURES[status])
         if status == "NotSigned" and risky_dir:
             reasons.append("and it is not signed")
+        launch_sev = None
+        for chain in chains.get((name, exe), []):
+            more, sev = launch_flags(name, chain)
+            reasons += [m for m in more if m not in reasons]
+            launch_sev = "high" if "high" in (sev, launch_sev) else (sev or launch_sev)
         if not reasons:
             continue
-        severity = "high" if (disguise or status == "HashMismatch" or (risky_dir and status == "NotSigned")) else "medium"
+        severity = "high" if (disguise or status == "HashMismatch" or (risky_dir and status == "NotSigned")
+                              or launch_sev == "high") else "medium"
         findings.append({"name": name, "exe": exe, "severity": severity, "signature": status, "signer": signer,
-                         "reasons": reasons})
+                         "reasons": reasons, "started_by": chains.get((name, exe), [""])[0]})
     findings.sort(key=lambda f: (f["severity"] != "high", f["name"]))
     return {"files_with_path": len(rows), "names_recorded": len(known_names), "unsigned_files": unsigned,
             "flagged": findings}

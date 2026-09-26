@@ -113,8 +113,10 @@ Rules:
   each process with its own history (never seen before, far more CPU than usual, memory keeps growing) from names,
   CPU and memory of the heaviest processes. Start from its `summary` (quote its caveats), then say what stands out
   (name, numbers, first_seen). suspect_files lists programs whose file location or digital signature is odd (a
-  Windows system name run from another folder, a broken signature, an unsigned file from Downloads/Temp): give the
-  name, the reasons and the path, marked high or medium, and say that odd is not the same as malicious.
+  Windows system name run from another folder, a broken signature, an unsigned file from Downloads/Temp, or a
+  program started through PowerShell/cmd by a document program or a browser): give the name, the reasons, the path
+  and `started_by` (who launched it, nearest first) when present, marked high or medium, and say that odd is not
+  the same as malicious.
   `network` says which processes talk to public addresses: from_suspicious_files, suspicious_ports (mining pools,
   Tor, IRC), new_listeners, new_destinations. Only who connects to whom is known, never how much or what; quote
   its `note` when it is present, and do not list ordinary connections. A name that is new because history is

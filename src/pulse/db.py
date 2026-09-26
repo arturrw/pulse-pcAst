@@ -50,6 +50,16 @@ CREATE TABLE IF NOT EXISTS process_exes (
     PRIMARY KEY (name, exe)
 );
 
+-- who started each recorded process: the names of its parents, nearest first, joined by " < " (a few rows per file)
+CREATE TABLE IF NOT EXISTS process_parents (
+    name TEXT,
+    exe TEXT,
+    chain TEXT,
+    first_seen REAL,
+    last_seen REAL,
+    PRIMARY KEY (name, exe, chain)
+);
+
 -- outbound TCP to public addresses ("out": addr = remote address, port = remote port) and TCP listening on something
 -- other than localhost ("listen": addr = bind address, port = local port); a few rows, not one per sample
 CREATE TABLE IF NOT EXISTS process_connections (
@@ -134,6 +144,7 @@ def prune(conn: sqlite3.Connection, keep_days: float, now: float | None = None) 
         removed += conn.execute(f"DELETE FROM {table} WHERE ts < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM process_exes WHERE last_seen < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM process_connections WHERE last_seen < ?", (cutoff,)).rowcount
+    removed += conn.execute("DELETE FROM process_parents WHERE last_seen < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM net_traffic WHERE ts < ?", (cutoff,)).rowcount
     removed += conn.execute("DELETE FROM binaries WHERE checked_ts < ?", (cutoff,)).rowcount
     # autoruns keep their baseline (first_seen), so only entries that disappeared long ago are dropped
@@ -151,6 +162,10 @@ def save_sample(conn: sqlite3.Connection, sample: dict) -> None:
         conn.execute("INSERT INTO process_exes (name, exe, first_seen, last_seen) VALUES (?, ?, ?, ?) "
                      "ON CONFLICT(name, exe) DO UPDATE SET last_seen = excluded.last_seen",
                      (e["name"], e["exe"], e["ts"], e["ts"]))
+        if e.get("chain"):
+            conn.execute("INSERT INTO process_parents (name, exe, chain, first_seen, last_seen) VALUES (?, ?, ?, ?, ?) "
+                         "ON CONFLICT(name, exe, chain) DO UPDATE SET last_seen = excluded.last_seen",
+                         (e["name"], e["exe"], e["chain"], e["ts"], e["ts"]))
     for c in sample.get("conns", []):
         conn.execute("INSERT INTO process_connections (name, kind, addr, port, first_seen, last_seen) "
                      "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(name, kind, addr, port) DO UPDATE SET last_seen = excluded.last_seen",

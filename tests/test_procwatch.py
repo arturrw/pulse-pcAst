@@ -3,7 +3,7 @@ import tempfile
 import time
 from pathlib import Path
 
-from pulse import binaries, db, tools
+from pulse import binaries, collectors, db, tools
 
 BS = chr(92)
 
@@ -85,11 +85,13 @@ def _files(fake_status: dict[str, str]) -> Path:
     return root
 
 
-def _watch(fake_status: dict[str, str]) -> dict:
+def _watch(fake_status: dict[str, str], keep: bool = False) -> dict:
+    """process_watch over a fresh _files() database, or over the one already set when `keep`."""
     real, real_dirs = binaries.check_signatures, binaries.RISKY_DIRS
     binaries.RISKY_DIRS = (BS + "dl_risky" + BS,)   # the test folder itself lives under Temp, which the real list flags
     try:
-        _files(fake_status)
+        if not keep:
+            _files(fake_status)
         binaries.check_signatures = lambda paths: {p: (fake_status.get(Path(p).name, "Valid"), "CN=Test") for p in paths}
         return tools.process_watch(60)
     finally:
@@ -144,6 +146,55 @@ def test_signature_cache_is_reused_until_the_file_changes():
     Path(f).write_bytes(b"MZ changed")
     binaries.ensure_checked(conn, [f], checker)
     assert len(calls) == 2                                                        # size changed: checked again
+
+
+def test_parent_chain_follows_parents_and_stops_at_a_reused_pid():
+    t = {1: ("explorer.exe", 100.0, 4), 4: ("System", 1.0, 0), 20: ("chrome.exe", 200.0, 1),
+         30: ("powershell.exe", 300.0, 20), 40: ("miner.exe", 400.0, 30)}
+    assert collectors.parent_chain(40, t) == ["powershell.exe", "chrome.exe", "explorer.exe", "System"]
+    assert collectors.parent_chain(40, t, depth=2) == ["powershell.exe", "chrome.exe"]
+    t[30] = ("notepad.exe", 450.0, 1)                 # pid 30 now belongs to a process started after miner.exe
+    assert collectors.parent_chain(40, t) == []
+    assert collectors.parent_chain(4, t) == []        # no parent in the table
+
+
+def test_a_parent_that_already_exited_is_named_from_the_previous_sample():
+    class P:   # just enough of psutil.Process for _exes
+        def __init__(self, pid, name, ctime, exe): self.pid, self.info, self._exe = pid, {"name": name, "create_time": ctime}, exe
+        def create_time(self): return self.info["create_time"]
+        def exe(self): return self._exe
+    c = collectors.Collector.__new__(collectors.Collector)
+    c._exe_cache = {}
+    table = {10: ("chrome.exe", 100.0, 1), 11: ("powershell.exe", 200.0, 10), 12: ("miner.exe", 300.0, 11)}
+    out = c._exes([{"pid": 12, "name": "miner.exe"}], {12: P(12, "miner.exe", 300.0, "C:/x/miner.exe")}, 5.0, table)
+    assert out == [{"ts": 5.0, "name": "miner.exe", "exe": "C:/x/miner.exe", "chain": "powershell.exe < chrome.exe"}]
+
+
+def test_launch_rules():
+    f = binaries.launch_flags
+    assert f("miner.exe", "explorer.exe") == ([], None)
+    assert f("powershell.exe", "explorer.exe")[1] is None                        # the user opened it: normal
+    assert f("miner.exe", "powershell.exe < explorer.exe")[1] is None
+    reasons, sev = f("miner.exe", "powershell.exe < EXCEL.EXE < explorer.exe")
+    assert sev == "high" and "started through powershell.exe" in reasons[0] and "macro" in reasons[0]
+    reasons, sev = f("powershell.exe", "chrome.exe")
+    assert sev == "medium" and reasons[0].startswith("powershell.exe (runs commands and scripts) was started by chrome.exe")
+    assert f("helper.exe", "cmd.exe < msedge.exe")[1] is None                   # how browsers start extension helpers
+    assert f("helper.exe", "cmd.exe < winword.exe")[1] == "high"
+
+
+def test_launch_chain_reaches_the_suspect_files():
+    root = _files({})
+    conn = db.connect(root / "t.db")
+    tool = str(next(root.rglob("tool.exe")))
+    now = time.time()
+    db.save_sample(conn, {"system": {"ts": now - 30}, "gpus": [], "processes": [], "disks": [],
+                          "exes": [{"ts": now - 30, "name": "tool.exe", "exe": tool, "chain": "powershell.exe < winword.exe"}]})
+    conn.close()
+    r = _watch({}, keep=True)
+    hit = next(f for f in r["suspect_files"] if f["name"] == "tool.exe")
+    assert hit["severity"] == "high" and hit["started_by"] == "powershell.exe < winword.exe"
+    assert "winword.exe" in hit["reasons"][0]
 
 
 if __name__ == "__main__":

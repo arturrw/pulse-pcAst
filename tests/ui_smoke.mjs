@@ -81,7 +81,7 @@ async function check(theme, width) {
     const cpu = await s.evalJs("document.querySelector('.card.live .big').textContent");
     if (!/^\d+%$/.test(cpu)) fail("overview", "the live processor value is not a percentage: " + cpu);
     await s.evalJs("document.querySelector('.spark').scrollIntoView({ block: 'center' })"); await sleep(300);
-    const sp = await s.evalJs("(() => { const r = document.querySelector('.spark').getBoundingClientRect(); return [Math.round(r.left + r.width * 0.6), Math.round(r.top + r.height / 2)]; })()");   // not the far left: the narrow sidebar covers it
+    const sp = await s.evalJs("(() => { const r = document.querySelector('.spark').getBoundingClientRect(); return [Math.round(r.left + r.width * 0.6), Math.round(r.top + r.height / 2)]; })()");   // not the far left: the hover strip of the menu button sits there
     await s.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: sp[0], y: sp[1] }); await sleep(200);
     const said = await s.evalJs("document.querySelector('.card.live .small').textContent");
     if (!/s earlier/.test(said)) fail("overview", "hovering an earlier live point did not say when it was: " + said);
@@ -120,6 +120,15 @@ async function check(theme, width) {
     if (!has) return;
     await s.evalJs("[...document.querySelectorAll('#view button')].find((b) => /What could it be/.test(b.textContent)).click()");
     await s.waitFor("document.querySelector('.msg.me') && /unusual/.test(document.querySelector('.msg.me').textContent)", "the question to appear in a new chat");
+  });
+  // on a narrow window the menu floats over the page, so it starts closed, opens from its button and closes on a tap on the page
+  if (width < 700) await guard("sidebar", async () => {
+    const w = () => s.evalJs("document.querySelector('#sidebar').getBoundingClientRect().width");
+    if ((await w()) > 1) fail("sidebar", "the menu covers the page on a narrow window");
+    await s.evalJs("document.querySelector('#sideToggle').click()"); await sleep(400);
+    if ((await w()) < 40) fail("sidebar", "the menu button did not open the menu");
+    await s.evalJs("document.querySelector('#view').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))"); await sleep(400);
+    if ((await w()) > 1) fail("sidebar", "a tap on the page did not close the menu");
   });
   const filtered = s.errors.filter((e, i) => s.errors.indexOf(e) === i);
   if (filtered.length) fail("console", filtered.slice(0, 5).join(" | "));

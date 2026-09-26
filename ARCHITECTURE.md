@@ -54,7 +54,7 @@ dashboard never disagree with each other. `pulse collect` is the only writer.
 | `digest.py` | One daily "quiet / not quiet" notification (`pulse digest`) |
 | `anomaly.py` | Statistical outlier detection used inside `metrics_history` |
 | `procwatch.py` | Behavioral process check: new name, high CPU, growing memory |
-| `lhm.py` | CPU temperature from LibreHardwareMonitor's local web server, when it runs |
+| `lhm.py` | CPU temperature and AMD/Intel graphics cards from LibreHardwareMonitor's local web server, when it runs |
 | `binaries.py` | File location, Authenticode signature and parent-chain (who launched it) checks for a process |
 | `netwatch.py` | Which process talked to which public address / port |
 | `netstats.py` | On-demand per-process traffic measurement (`pulse netstats`, needs admin) |

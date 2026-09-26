@@ -14,10 +14,11 @@ def _print_sample(s: dict) -> None:
         f"({sy['ram_used_mb'] / 1024:.1f} GB) | disk R/W "
         f"{sy['disk_read_mbps']:.1f}/{sy['disk_write_mbps']:.1f} MB/s"
     )
+    n = lambda v, unit="": "?" if v is None else f"{v:.0f}{unit}"   # a card read through LibreHardwareMonitor may lack some
     for g in s["gpus"]:
         print(
-            f"GPU {g['name']}: {g['util_percent']:.0f}% | VRAM "
-            f"{g['mem_used_mb']:.0f}/{g['mem_total_mb']:.0f} MB | {g['temp_c']}°C | {g['power_w']:.0f} W"
+            f"GPU {g['name']}: {n(g['util_percent'], '%')} | VRAM "
+            f"{n(g['mem_used_mb'])}/{n(g['mem_total_mb'])} MB | {n(g['temp_c'], '°C')} | {n(g['power_w'], ' W')}"
         )
     top = sorted(s["processes"], key=lambda r: r["cpu_percent"], reverse=True)[:3]
     print("Top CPU: " + ", ".join(f"{p['name']} {p['cpu_percent']:.1f}%" for p in top))

@@ -21,7 +21,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import ack, alerts, autorec, chat, chatstore, cs2settings, db, digest, explain, gamelib, games, lhm, paths, report, settings, setup_tasks, tools
-from .collectors import LiveSampler
+from .collectors import LiveSampler, nvidia_present
 from .webui_page import render_page
 
 MAX_BODY = 16 * 1024
@@ -477,7 +477,7 @@ class App:
                 "settings": settings.load(self.db_path.parent), "choices": {k: list(v) for k, v in settings.CHOICES.items()},
                 "data_folder": str(self.db_path.parent), "model": self.model,
                 "netstats_command": "pulse netstats --seconds 60",
-                "cpu_temp": self._cached("lhm", lhm.probe, 10),
+                "cpu_temp": {**self._cached("lhm", lhm.probe, 10), "nvidia": nvidia_present()},
                 "autorec": {"presentmon": gamelib.presentmon_exe() is not None,
                             "in_group": self._cached("perf_group", autorec.in_perf_log_users, 20),
                             "games": [g["process"] for g in self.gamelist.load()],

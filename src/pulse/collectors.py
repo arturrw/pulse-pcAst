@@ -112,9 +112,24 @@ def static_hardware_info() -> dict:
     }
 
 
+def nvidia_present() -> bool:
+    try:
+        return _NVML and pynvml.nvmlDeviceGetCount() > 0
+    except Exception:   # noqa: BLE001 - a driver hiccup means "not now", not a crash
+        return False
+
+
+def gpus_from_lhm(ts: float, reader=None) -> list[dict]:
+    """AMD / Intel (or any) graphics card from LibreHardwareMonitor, for a PC without an NVIDIA card. Only the main
+    card: the history does not tell cards apart, so an integrated one next to it would blur every chart."""
+    cards = (reader or lhm.READER).gpus()
+    return [{"ts": ts, "idx": 0, **{k: v for k, v in cards[0].items() if k != "vendor"}}] if cards else []
+
+
 def collect_gpus(ts: float) -> list[dict]:
-    if not _NVML:
-        return []
+    """NVIDIA cards through NVIDIA's own library; without one, the main card LibreHardwareMonitor reports."""
+    if not nvidia_present():
+        return gpus_from_lhm(ts)
     gpus = []
     for i in range(pynvml.nvmlDeviceGetCount()):
         h = pynvml.nvmlDeviceGetHandleByIndex(i)

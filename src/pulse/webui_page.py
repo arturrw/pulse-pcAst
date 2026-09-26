@@ -265,7 +265,7 @@ const mbs = (v) => v == null ? "–" : (v >= 10 ? v.toFixed(0) : v.toFixed(1)) +
 const LIVE_TILES = [
   { title: "Processor", get: (s) => s.cpu_percent, big: (s) => Math.round(s.cpu_percent) + "%", small: (s) => s.cpu_temp_c == null ? "" : Math.round(s.cpu_temp_c) + " °C", scale: [0, 100] },
   { title: "Memory", get: (s) => s.ram_percent, big: (s) => Math.round(s.ram_percent) + "%", small: (s) => s.ram_used_gb.toFixed(1) + " GB in use", scale: [0, 100] },
-  { title: "Graphics card", get: (s) => s.gpu_util_percent, big: (s) => Math.round(s.gpu_util_percent) + "%", small: (s) => s.gpu_temp_c == null ? "" : s.gpu_temp_c + " °C", scale: [0, 100], gpu: true },
+  { title: "Graphics card", get: (s) => s.gpu_util_percent, big: (s) => Math.round(s.gpu_util_percent) + "%", small: (s) => s.gpu_temp_c == null ? "" : Math.round(s.gpu_temp_c) + " °C", scale: [0, 100], gpu: true },
   { title: "Disk", get: (s) => (s.disk_read_mbps || 0) + (s.disk_write_mbps || 0), big: (s) => mbs((s.disk_read_mbps || 0) + (s.disk_write_mbps || 0)), small: (s) => "read " + mbs(s.disk_read_mbps) + " · write " + mbs(s.disk_write_mbps), floor: 1 },
   { title: "Network", get: (s) => s.net_recv_kbps + s.net_sent_kbps, big: (s) => rate(s.net_recv_kbps + s.net_sent_kbps), small: (s) => "down " + rate(s.net_recv_kbps) + " · up " + rate(s.net_sent_kbps), floor: 100 },
 ];
@@ -724,7 +724,15 @@ function cpuTempSection(t) {
     h("li", {}, "Options > Run On Windows Startup, so it is there after a restart."));
   return h("section", {}, h("h2", {}, "Processor temperature"),
     h("div", { class: "item" }, h("span", { class: "badge " + (ok ? "ok" : "mute") }, ok ? "Found" : "Not found"),
-      h("div", { class: "body" }, h("div", { class: "title" }, "LibreHardwareMonitor"), h("div", { class: "detail" }, detail), steps)));
+      h("div", { class: "body" }, h("div", { class: "title" }, "LibreHardwareMonitor"), h("div", { class: "detail" }, detail), gpuLine(t), steps)));
+}
+// NVIDIA cards are read directly; any other card only through LibreHardwareMonitor.
+function gpuLine(t) {
+  if (t.nvidia) return null;
+  const text = t.gpu ? "Graphics card data (load, memory, temperature) also comes from it: " + t.gpu + "."
+    : t.available ? "It shows no graphics card: in its Hardware menu, make sure GPU is ticked."
+    : "It also gives the load, memory and temperature of AMD and Intel graphics cards (NVIDIA cards are read without it).";
+  return h("div", { class: "detail" }, text);
 }
 
 const GBS = { 1: "1 GB", 2: "2 GB", 5: "5 GB", 10: "10 GB", 20: "20 GB", 50: "50 GB" };

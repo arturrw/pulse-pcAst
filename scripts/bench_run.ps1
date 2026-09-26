@@ -1,8 +1,13 @@
-# One unattended pass of the "CS2 FPS BENCHMARK DUST2" workshop map, recorded with PresentMon.
-#   powershell -File scripts\bench_run.ps1 [-Name base_1] [-Set @{ 'setting.msaa_samples' = '2' }]
-# Sets the given cs2_video.txt keys (game must be closed), starts PresentMon, launches CS2 on the
-# benchmark map, waits for the game's own VProf report, closes the game, restores your settings and
-# prints the session report. Needs admin OR membership in "Performance Log Users" (PresentMon/ETW):
+# One unattended CS2 benchmark pass, recorded with PresentMon.
+#   powershell -File scripts\bench_run.ps1 [-Name base_1] [-Set @{ 'setting.msaa_samples' = '2' }] [-Scene bots]
+# Scenes:
+#   benchmark (default) - the "CS2 FPS BENCHMARK DUST2" workshop map: a scripted camera flight past frozen bots.
+#                         Repeatable, but light on the processor (the graphics card limits it).
+#   bots                - a local deathmatch on de_dust2 with -Bots bots fighting and the spectator camera following
+#                         the action: bot AI, animation and effects load the processor, like a real match. Not
+#                         frame-for-frame repeatable, so run several repeats and look at the spread.
+# Sets the given cs2_video.txt keys (game must be closed), starts PresentMon, launches CS2, waits for the
+# measurement to end, closes the game, restores your settings and prints the session report. Needs admin OR membership in "Performance Log Users" (PresentMon/ETW):
 #   Once, as admin (then log off/on):
 #   Add-LocalGroupMember -SID S-1-5-32-559 -Member "$env:USERDOMAIN\$env:USERNAME"
 param(
@@ -11,6 +16,10 @@ param(
     [string]$MapId = "3240880604",
     [string]$MapName = "de_dust2",   # what the Play > Workshop menu loads; its cfg pulls in the benchmark setup
     [int]$TimeoutMin = 10,
+    [ValidateSet("benchmark", "bots")][string]$Scene = "benchmark",
+    [int]$Bots = 16,                 # bots scene: how many bots fight
+    [int]$WarmupSec = 30,            # bots scene: time for the bots to spread out before measuring
+    [int]$MeasureSec = 120,          # bots scene: length of the measured stretch
     [switch]$KeepSettings
 )
 
@@ -28,6 +37,44 @@ function Set-VideoSettings([string]$Path, [hashtable]$Values) {
         $text = $text.Substring(0, $m.Groups[2].Index) + [string]$Values[$key] + $text.Substring($m.Groups[3].Index)
     }
     [IO.File]::WriteAllText($Path, $text)
+}
+
+# The bots scene hooks into CS2's own override slot: after gamemode_deathmatch.cfg the game runs
+# cfg/gamemode_deathmatch_server.cfg if it exists (console.log says "couldn't exec ... gamemode_*_server.cfg" when not).
+# Both files carry this marker on their first line, so a file left behind by a crashed run is recognised and removed,
+# and a file the user wrote themselves is never touched.
+$SceneMarker = "// written by Pulse scripts/bench_run.ps1 -Scene bots; deleted after the run"
+
+function Get-BotSceneFiles([string]$GameDir, [int]$Bots, [int]$WarmupSec, [int]$MeasureSec) {
+    $cfg = Join-Path $GameDir "cfg"
+    $server = @(
+        $SceneMarker,
+        "sv_cheats 1",                            # exec_async (the timed script below) needs cheats; local server only
+        "bot_quota_mode normal", "bot_quota $Bots", "bot_difficulty 2",
+        "mp_warmup_end", "mp_timelimit 60", "mp_roundtime 60", "mp_ignore_round_win_conditions 1",
+        "exec_async pulse_bots_timeline"
+    )
+    $timeline = @(
+        $SceneMarker,
+        "sleep 8000",                             # the player is connected by now
+        "jointeam 1", "spec_autodirector 1", "spec_mode 4",   # spectate: the camera follows whoever is fighting
+        "cl_drawhud 0", "r_drawviewmodel 0", "fps_max 0",
+        "sleep $($WarmupSec * 1000)",
+        "echo PULSE_BENCH_START",
+        "sleep $($MeasureSec * 1000)",
+        "echo PULSE_BENCH_STOP",
+        "disconnect"                              # also makes the game print its VProf report
+    )
+    @(
+        [pscustomobject]@{ Path = (Join-Path $cfg "gamemode_deathmatch_server.cfg"); Lines = $server },
+        [pscustomobject]@{ Path = (Join-Path $cfg "pulse_bots_timeline.cfg"); Lines = $timeline }
+    )
+}
+
+function Remove-BotSceneFiles($Files) {
+    foreach ($f in $Files) {
+        if ((Test-Path $f.Path) -and ((Get-Content $f.Path -TotalCount 1) -eq $SceneMarker)) { Remove-Item $f.Path }
+    }
 }
 
 function Get-SteamPaths {
@@ -60,6 +107,17 @@ New-Item -ItemType Directory -Force (Join-Path $OutDir "backup") | Out-Null
 $csv = Join-Path $OutDir "$Name.csv"
 if (Test-Path $csv) { Write-Host "$csv already exists, pick another -Name."; exit 1 }
 $log = Join-Path $p.GameDir "console.log"
+$sceneFiles = @()
+if ($Scene -eq "bots") {
+    $sceneFiles = Get-BotSceneFiles $p.GameDir $Bots $WarmupSec $MeasureSec
+    Remove-BotSceneFiles $sceneFiles   # left over from a crashed run
+    $foreign = @($sceneFiles | Where-Object { Test-Path $_.Path })
+    if ($foreign) { Write-Host "$($foreign[0].Path) exists and was not written by this script: move it away first."; exit 1 }
+    $TimeoutMin = [Math]::Max($TimeoutMin, [Math]::Ceiling(($WarmupSec + $MeasureSec) / 60) + 4)
+    $startPattern, $stopPattern = "PULSE_BENCH_START", "PULSE_BENCH_STOP"
+} else {
+    $startPattern, $stopPattern = "\[VProf\] VProfLite started", "\[VProf\] VProfLite stopped"
+}
 $backup = Join-Path $OutDir ("backup\cs2_video_" + (Get-Date -Format "yyyyMMdd_HHmmss") + ".txt")
 Copy-Item $p.Video $backup
 Write-Host "Settings backup: $backup"
@@ -71,29 +129,31 @@ try {
         Write-Host ("Applied: " + (($Set.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ", "))
     }
     if (Test-Path $log) { Remove-Item $log }
+    foreach ($f in $sceneFiles) { [IO.File]::WriteAllLines($f.Path, [string[]]$f.Lines) }
     $pm = Start-Process $PresentMon -ArgumentList "--process_name cs2.exe --output_file `"$csv`" --date_time --stop_existing_session" -NoNewWindow -PassThru
     Start-Sleep -Seconds 3
     if ($pm.HasExited) { throw "PresentMon exited right after start (see its message above)" }
-    Start-Process $p.SteamExe -ArgumentList "-applaunch 730 -novid -condebug +map_workshop $MapId $MapName"
-    Write-Host "Launched CS2 on $MapName. Waiting for the game..."
+    $launch = if ($Scene -eq "bots") { "+game_type 1 +game_mode 2 +map $MapName" } else { "+map_workshop $MapId $MapName" }
+    Start-Process $p.SteamExe -ArgumentList "-applaunch 730 -novid -condebug $launch"
+    Write-Host "Launched CS2 on $MapName ($Scene scene). Waiting for the game..."
 
     $deadline = (Get-Date).AddMinutes(3)
     while (-not (Get-Process cs2 -ErrorAction SilentlyContinue)) {
         if ((Get-Date) -gt $deadline) { throw "CS2 did not start within 3 minutes" }
         Start-Sleep -Seconds 2
     }
-    Write-Host "CS2 is running. Waiting for the benchmark report (up to $TimeoutMin min)..."
+    Write-Host "CS2 is running. Waiting for the end of the measurement (up to $TimeoutMin min)..."
     $deadline = (Get-Date).AddMinutes($TimeoutMin)
     $done = $false
     while ((Get-Date) -lt $deadline -and (Get-Process cs2 -ErrorAction SilentlyContinue)) {
         Start-Sleep -Seconds 3
-        if ((Test-Path $log) -and (Select-String -Path $log -Pattern "VProfLite stopped" -Quiet -ErrorAction SilentlyContinue)) { $done = $true; break }
+        if ((Test-Path $log) -and (Select-String -Path $log -Pattern $stopPattern -Quiet -ErrorAction SilentlyContinue)) { $done = $true; break }
     }
-    if (-not $done) { throw "no VProf report in console.log (the benchmark did not start by itself, or the map failed to load)" }
+    if (-not $done) { throw "the measurement did not finish (no '$stopPattern' in console.log): the scene did not start by itself, or the map failed to load" }
     Start-Sleep -Seconds 3
     $lines = Get-Content $log
-    $stopLine = $lines | Select-String "^(\d\d/\d\d \d\d:\d\d:\d\d) \[VProf\] VProfLite stopped" | Select-Object -Last 1
-    $startLine = $lines | Select-String "^(\d\d/\d\d \d\d:\d\d:\d\d) \[VProf\] VProfLite started" | Select-Object -Last 1
+    $stopLine = $lines | Select-String "^(\d\d/\d\d \d\d:\d\d:\d\d) .*$stopPattern" | Select-Object -Last 1
+    $startLine = $lines | Select-String "^(\d\d/\d\d \d\d:\d\d:\d\d) .*$startPattern" | Select-Object -Last 1
     $from = ($lines | Select-String "-- Performance report --" | Select-Object -Last 1).LineNumber
     if ($from) { $lines[($from - 1)..($lines.Count - 1)] | Set-Content (Join-Path $OutDir "$Name.vprof.txt") }
     $fps = $lines | Select-String "FPS: Avg=" | Select-Object -Last 1
@@ -105,6 +165,7 @@ finally {
     if ($pm -and -not $pm.HasExited) { Stop-Process -Id $pm.Id -Force }
     & $PresentMon --terminate_existing_session *> $null   # a killed PresentMon leaves its ETW session running
     if ($Set.Count -gt 0 -and -not $KeepSettings) { Copy-Item $backup $p.Video -Force; Write-Host "Settings restored." }
+    Remove-BotSceneFiles $sceneFiles
 }
 if ((Test-Path $csv) -and $stopLine -and $startLine) {
     # Analysis window = the benchmark itself (game's VProf start..stop), not loading or game exit.

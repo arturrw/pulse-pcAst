@@ -16,7 +16,7 @@ MAX_HALF_WINDOW_MIN = 240
 _UNITS = {"m": 1, "min": 1, "mins": 1, "minute": 1, "minutes": 1, "мин": 1, "минуту": 1, "минуты": 1, "минут": 1,
           "h": 60, "hour": 60, "hours": 60, "ч": 60, "час": 60, "часа": 60, "часов": 60}
 METRICS = (("cpu_percent", "system_metrics", "cpu_percent", "%"), ("ram_percent", "system_metrics", "ram_percent", "%"),
-           ("gpu_temp_c", "gpu_metrics", "temp_c", " C"), ("gpu_util_percent", "gpu_metrics", "util_percent", "%"))
+           ("gpu_temp_c", "gpu_metrics", "temp_c", " C"), ("cpu_temp_c", "system_metrics", "cpu_temp_c", " C"), ("gpu_util_percent", "gpu_metrics", "util_percent", "%"))
 
 
 def parse_when(text: str, now: datetime) -> datetime | None:

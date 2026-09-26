@@ -20,14 +20,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ack, alerts, autorec, chat, chatstore, cs2settings, db, digest, explain, gamelib, games, paths, report, settings, setup_tasks, tools
+from . import ack, alerts, autorec, chat, chatstore, cs2settings, db, digest, explain, gamelib, games, lhm, paths, report, settings, setup_tasks, tools
 from .collectors import LiveSampler
 from .webui_page import render_page
 
 MAX_BODY = 16 * 1024
 MAX_MESSAGE = 2000
 ANOMALY_TEXT = {"ram_percent": ("Memory use", "%"), "ram_used_mb": ("Memory in use", " MB"), "swap_percent": ("Swap file use", "%"),
-                "gpu_temp_c": ("Graphics card temperature", " °C")}
+                "gpu_temp_c": ("Graphics card temperature", " °C"), "cpu_temp_c": ("Processor temperature", " °C")}
 KEEP_MESSAGES = 24           # the conversation the model sees, besides the system prompt
 IDLE_SECONDS = 300           # no heartbeat from the page for this long: the tab is closed, stop the server
 STATUS_TTL = 45              # the Windows checks take seconds: reuse them for a moment
@@ -475,6 +475,7 @@ class App:
                 "settings": settings.load(self.db_path.parent), "choices": {k: list(v) for k, v in settings.CHOICES.items()},
                 "data_folder": str(self.db_path.parent), "model": self.model,
                 "netstats_command": "pulse netstats --seconds 60",
+                "cpu_temp": self._cached("lhm", lhm.probe, 10),
                 "autorec": {"presentmon": gamelib.presentmon_exe() is not None,
                             "in_group": self._cached("perf_group", autorec.in_perf_log_users, 20),
                             "games": [g["process"] for g in self.gamelist.load()],

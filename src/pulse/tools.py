@@ -24,6 +24,7 @@ METRICS = {
     "gpu_util_percent": ("gpu_metrics", "util_percent"),
     "gpu_mem_used_mb": ("gpu_metrics", "mem_used_mb"),
     "gpu_temp_c": ("gpu_metrics", "temp_c"),
+    "cpu_temp_c": ("system_metrics", "cpu_temp_c"),
     "gpu_power_w": ("gpu_metrics", "power_w"),
 }
 
@@ -48,7 +49,8 @@ def current_status() -> dict:
     "system" also carries static hardware facts (cpu_name, cpu_cores_logical, cpu_cores_physical,
     ram_total_mb, gpu_driver_version, hostname) for "what CPU/how many cores/how much RAM/what's
     this PC's name" questions - never derive these from a percentage or estimate them, only report
-    what is here; a null field means that fact is not available. "battery" is percent/plugged_in,
+    what is here; a null field means that fact is not available. cpu_temp_c is null unless LibreHardwareMonitor
+    is running with Options > Remote Web Server > Run: then say so instead of guessing. "battery" is percent/plugged_in,
     or null on a desktop with no battery."""
     s = Collector().sample()
     procs = s["processes"]
@@ -132,7 +134,7 @@ def metrics_history(metric: str, minutes: int = 60) -> dict:
     """Summarize one metric over a recent time window from collected history: min, avg, max (and when the max
     happened), latest, the change over the last 10 minutes. Use it for any question about how a metric looked or
     changed: "was there a spike", "how hot did the GPU get", "was anything unusual / strange / an anomaly".
-    For gpu_temp_c, ram_percent, ram_used_mb and swap_percent the result also lists `unusual_periods`: stretches
+    For gpu_temp_c, cpu_temp_c, ram_percent, ram_used_mb and swap_percent the result also lists `unusual_periods`: stretches
     where the value stayed far outside its recent normal (a statistical check, not a fault diagnosis), each marked
     `during_game` when a game recording overlaps. Load metrics (CPU, GPU usage, disk, network) are not checked
     for unusual periods: they swing with whatever the user runs. It is about history: for what a value is right
@@ -141,7 +143,8 @@ def metrics_history(metric: str, minutes: int = 60) -> dict:
     Args:
         metric: One of cpu_percent, ram_percent, ram_used_mb, swap_percent, disk_read_mbps,
             disk_write_mbps, net_sent_kbps, net_recv_kbps, gpu_util_percent, gpu_mem_used_mb,
-            gpu_temp_c, gpu_power_w.
+            gpu_temp_c, gpu_power_w, cpu_temp_c (only recorded while LibreHardwareMonitor runs with its web
+            server on; otherwise there is no data and the CPU temperature is unknown).
         minutes: How many minutes of history to look at.
     """
     result = _history(metric, minutes)

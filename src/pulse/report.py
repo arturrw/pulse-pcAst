@@ -8,7 +8,8 @@ from html import escape
 from . import alerts, anomaly, db, netstats, tools
 
 CHARTS = [("gpu_temp_c", "GPU temperature", "°C"), ("cpu_percent", "CPU load", "%"),
-          ("ram_percent", "RAM used", "%"), ("gpu_util_percent", "GPU load", "%")]
+          ("ram_percent", "RAM used", "%"), ("gpu_util_percent", "GPU load", "%"), ("cpu_temp_c", "CPU temperature", "°C")]
+OPTIONAL = {"cpu_temp_c"}   # only recorded while LibreHardwareMonitor runs: no data means leave it out, not "no data"
 MAX_POINTS = 360          # chart resolution: a day at 30 s is 2880 samples, averaged into buckets
 
 
@@ -148,6 +149,8 @@ def overview(hours: float, now: float) -> str:
     rows = []
     for metric, title, unit in CHARTS:
         r = tools._history(metric, int(hours * 60))
+        if "error" in r and metric in OPTIONAL:
+            continue
         if "error" in r:
             rows.append([escape(title), "-", "-", "-", "-"])
         else:
@@ -332,7 +335,8 @@ def build_report(hours: float = 24, now: float | None = None) -> str:
         gaps = sorted(b - a for a, b in zip(stamps, stamps[1:]) if b - a < 3600)
         step = gaps[len(gaps) // 2] if gaps else 30.0               # how often the collector writes a sample
         anom = state_anomalies(hours)
-        charts = "<div class='charts'>" + "".join(chart(m, t, u, hours, now, step, bands_of(anom, m, now)) for m, t, u in CHARTS) + "</div>"
+        shown = [c for c in CHARTS if c[0] not in OPTIONAL or len(series(c[0], hours, now)) >= 2]
+        charts = "<div class='charts'>" + "".join(chart(m, t, u, hours, now, step, bands_of(anom, m, now)) for m, t, u in shown) + "</div>"
         parts = (("summary", cov + overview(hours, now)), ("unusual", unusual(hours, anom)), ("alerts", alerts_section()),
                  ("health", health_section(hours)), ("startup", startup_section(hours)), ("watch", watch(hours)),
                  ("traffic", traffic_section()), ("charts", charts), ("disks", disks()), ("processes", processes(hours)), ("games", games()))

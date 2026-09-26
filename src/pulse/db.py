@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS system_metrics (
     disk_read_mbps REAL,
     disk_write_mbps REAL,
     net_sent_kbps REAL,
-    net_recv_kbps REAL
+    net_recv_kbps REAL,
+    cpu_temp_c REAL
 );
 
 CREATE TABLE IF NOT EXISTS gpu_metrics (
@@ -122,7 +123,18 @@ def connect(path: Path | str = DEFAULT_DB) -> sqlite3.Connection:
     path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(path)
     conn.executescript(SCHEMA)
+    _add_columns(conn)
     return conn
+
+
+# columns added after the first release: CREATE TABLE IF NOT EXISTS leaves an older database without them
+ADDED_COLUMNS = (("system_metrics", "cpu_temp_c", "REAL"),)
+
+
+def _add_columns(conn: sqlite3.Connection) -> None:
+    for table, col, kind in ADDED_COLUMNS:
+        if col not in {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {kind}")
 
 
 def _insert(conn: sqlite3.Connection, table: str, rows: list[dict]) -> None:

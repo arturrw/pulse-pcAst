@@ -54,6 +54,10 @@ The database, recordings and reports live in `data/` (git-ignored).
 - Windows, Python 3.10+
 - [Ollama](https://ollama.com) with a tool-capable model: `ollama pull qwen3:8b`
 - NVIDIA GPU for GPU metrics (via NVML)
+- Optional: [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases) for the
+  CPU temperature. Windows does not give it to a normal program; with LibreHardwareMonitor running and
+  *Options > Remote Web Server > Run* on, Pulse reads it from `http://127.0.0.1:8085/data.json` (only this PC
+  needs that port: do not open it in the firewall). Without it the CPU temperature is simply not recorded.
 
 ## Usage
 ```powershell

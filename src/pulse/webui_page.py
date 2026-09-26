@@ -65,7 +65,7 @@ textarea,input[type=text]{flex:1;min-width:180px;background:var(--card);border:1
 table{border-collapse:collapse;width:100%}th,td{text-align:left;padding:6px 10px 6px 0;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}th{color:var(--mute);font-weight:500}
 code{background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anywhere}.chips button{font-size:13px}.err{color:var(--bad);margin:8px 0}
 .card.link,.gamecard{cursor:pointer;transition:transform .16s ease,border-color .16s,box-shadow .16s}.card.link:hover,.gamecard:hover{border-color:var(--acc);transform:translateY(-2px);box-shadow:0 6px 16px rgba(0,0,0,.18)}.card.link:active,.gamecard:active{transform:scale(.985)}.small{font-size:12px}
-.item.col{flex-direction:column;gap:0;padding:0}.item.col.done{opacity:.65}
+.steps{margin:6px 0 0;padding-left:20px;color:var(--mute)}.steps li{margin:3px 0}.item.col{flex-direction:column;gap:0;padding:0}.item.col.done{opacity:.65}
 .head{display:flex;gap:12px;align-items:flex-start;padding:10px 14px;cursor:pointer;width:100%}.head.static{cursor:default}.head:hover{background:var(--chip);border-radius:10px}.head.static:hover{background:none}
 .head .body{flex:1;min-width:0}
 .more{display:none;padding:2px 14px 12px}.more.open{display:block;animation:rise .22s ease both}.explain p{margin:6px 0}.tech{margin:8px 0;font-family:ui-monospace,Consolas,monospace}
@@ -263,7 +263,7 @@ const liveHist = [];
 const rate = (kbps) => kbps == null ? "–" : kbps >= 1024 ? (kbps / 1024).toFixed(1) + " MB/s" : Math.round(kbps) + " KB/s";
 const mbs = (v) => v == null ? "–" : (v >= 10 ? v.toFixed(0) : v.toFixed(1)) + " MB/s";
 const LIVE_TILES = [
-  { title: "Processor", get: (s) => s.cpu_percent, big: (s) => Math.round(s.cpu_percent) + "%", scale: [0, 100] },
+  { title: "Processor", get: (s) => s.cpu_percent, big: (s) => Math.round(s.cpu_percent) + "%", small: (s) => s.cpu_temp_c == null ? "" : Math.round(s.cpu_temp_c) + " °C", scale: [0, 100] },
   { title: "Memory", get: (s) => s.ram_percent, big: (s) => Math.round(s.ram_percent) + "%", small: (s) => s.ram_used_gb.toFixed(1) + " GB in use", scale: [0, 100] },
   { title: "Graphics card", get: (s) => s.gpu_util_percent, big: (s) => Math.round(s.gpu_util_percent) + "%", small: (s) => s.gpu_temp_c == null ? "" : s.gpu_temp_c + " °C", scale: [0, 100], gpu: true },
   { title: "Disk", get: (s) => (s.disk_read_mbps || 0) + (s.disk_write_mbps || 0), big: (s) => mbs((s.disk_read_mbps || 0) + (s.disk_write_mbps || 0)), small: (s) => "read " + mbs(s.disk_read_mbps) + " · write " + mbs(s.disk_write_mbps), floor: 1 },
@@ -456,7 +456,7 @@ function findingCard(f, redraw) {
 
 // ---- what happened
 const KIND = { metric: "Load", process: "New program", network: "New connection", autostart: "Starts by itself", gap: "No data", alert: "Notification", game: "Game", windows: "Windows", defender: "Antivirus" };
-const METRIC_LABEL = { cpu_percent: "Processor", ram_percent: "Memory", gpu_temp_c: "Graphics card temperature", gpu_util_percent: "Graphics card load" };
+const METRIC_LABEL = { cpu_percent: "Processor", ram_percent: "Memory", gpu_temp_c: "Graphics card temperature", cpu_temp_c: "Processor temperature", gpu_util_percent: "Graphics card load" };
 async function timeline(out) {
   const when = h("input", { type: "text", value: "now", placeholder: "now" });
   const mins = h("select", {}, [10, 30, 60, 180].map((m) => h("option", { value: String(m) }, "± " + (m >= 60 ? m / 60 + " h" : m + " min"))));
@@ -656,10 +656,26 @@ async function setup(out) {
       jobCard(job.digest, "Daily summary", "One notification a day with what happened in the last 24 hours. If the PC is off at that time, it shows when you switch it on.",
         field("Send at", dAt, "Pick a time when you are up."), () => ({ digest_time: dAt.value })), msg),
     autorecSection(s, job.collect, say, pick, field, () => setup(out)),
+    cpuTempSection(s.cpu_temp),
     h("section", {}, h("h2", {}, "Assistant (Ollama)"), h("div", { class: "item" }, h("span", { class: "badge " + (s.ollama.running ? "ok" : "bad") }, s.ollama.running ? "Running" : "Not running"), h("div", { class: "body" }, h("div", { class: "title" }, "Model " + s.model), h("div", { class: "detail" }, s.ollama.hint || "Ready to answer.")))),
     h("section", {}, h("h2", {}, "Try it"), h("div", { class: "row" }, h("button", { onclick: () => say(() => api("notify", {})) }, "Send a test notification"), h("button", { onclick: () => say(() => api("digest", {})) }, "Run the summary now")),
       h("p", { class: "mute" }, "Traffic per program needs administrator rights. In a terminal opened as administrator run:"), h("p", {}, h("code", {}, s.netstats_command))),
     h("section", {}, h("h2", {}, "Where your data is"), h("code", {}, s.data_folder)));
+}
+
+// Windows does not let a normal program read the processor temperature; LibreHardwareMonitor can, and Pulse reads it from there.
+function cpuTempSection(t) {
+  const ok = t.available && t.cpu_temp_c != null;
+  const detail = ok ? "Read from LibreHardwareMonitor: " + Math.round(t.cpu_temp_c) + " °C right now. It is recorded with everything else while LibreHardwareMonitor runs."
+    : t.available ? "LibreHardwareMonitor answers, but shows no processor temperature. In its Hardware menu, make sure CPU is ticked."
+    : "Windows does not let a normal program read it. LibreHardwareMonitor can, and Pulse reads it from there:";
+  const steps = ok || t.available ? null : h("ol", { class: "steps" },
+    h("li", {}, "Download LibreHardwareMonitor from github.com/LibreHardwareMonitor/LibreHardwareMonitor/releases and run it (it asks for administrator rights to read the sensors)."),
+    h("li", {}, "In its menu: Options > Remote Web Server > Run. Pulse reads it at " + t.url + "; only this PC needs it, so do not open the port in the firewall."),
+    h("li", {}, "Options > Run On Windows Startup, so it is there after a restart."));
+  return h("section", {}, h("h2", {}, "Processor temperature"),
+    h("div", { class: "item" }, h("span", { class: "badge " + (ok ? "ok" : "mute") }, ok ? "Found" : "Not found"),
+      h("div", { class: "body" }, h("div", { class: "title" }, "LibreHardwareMonitor"), h("div", { class: "detail" }, detail), steps)));
 }
 
 const GBS = { 1: "1 GB", 2: "2 GB", 5: "5 GB", 10: "10 GB", 20: "20 GB", 50: "50 GB" };

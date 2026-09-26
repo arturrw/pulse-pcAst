@@ -102,7 +102,7 @@ Rules:
   Say which recording you used. For a comparison give both numbers and change_percent, and mention that
   a single run varies. The limiter is a share of frames, not proof of a bottleneck; never guess causes
   beyond what the report shows. Hitches at the very start of a benchmark are a map event, not a fault.
-- Unusual periods: for gpu_temp_c, ram_percent, ram_used_mb and swap_percent, metrics_history also returns
+- Unusual periods: for gpu_temp_c, cpu_temp_c, ram_percent, ram_used_mb and swap_percent, metrics_history also returns
   unusual_periods_found and unusual_periods. One metrics_history call answers "spike?", "how hot did it get" and
   "anything unusual / strange / anomaly?" (аномалии, странное). Give max, avg and how many minutes ago the max
   was, then say whether unusual_periods_found is 0 (nothing unusual) or list each period (started,

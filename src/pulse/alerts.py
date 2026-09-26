@@ -105,7 +105,7 @@ def check_disks(now: float) -> list[Alert]:
 ALERT_METRICS = tuple(m for m in anomaly.STATE_METRICS if m != "ram_used_mb")
 # An unusual value is only worth an interruption when it is also high: RAM going from 47% to 62% because a model was
 # loaded harms nothing, RAM at 90% does. Below these levels the event stays in the report, without a notification.
-ALERT_MIN_LEVEL = {"ram_percent": 85.0, "gpu_temp_c": 80.0, "swap_percent": 20.0}
+ALERT_MIN_LEVEL = {"ram_percent": 85.0, "gpu_temp_c": 80.0, "cpu_temp_c": 90.0, "swap_percent": 20.0}
 
 
 def check_unusual(now: float) -> list[Alert]:

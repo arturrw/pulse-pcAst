@@ -6,6 +6,8 @@ import time
 
 import psutil
 
+from . import lhm
+
 try:
     import pynvml
 
@@ -183,6 +185,7 @@ class LiveSampler:
             "net_sent_kbps": (net.bytes_sent - self._prev_net.bytes_sent) / 1024 / dt,
             "gpu_util_percent": gpus[0]["util_percent"] if gpus else None,
             "gpu_temp_c": gpus[0]["temp_c"] if gpus else None,
+            "cpu_temp_c": lhm.READER.cpu_temp(),
         }
         self._prev_time, self._prev_disk, self._prev_net = now, disk, net
         return self._last
@@ -317,6 +320,7 @@ class Collector:
             "disk_write_mbps": (disk.write_bytes - self._prev_disk.write_bytes) / MB / dt,
             "net_sent_kbps": (net.bytes_sent - self._prev_net.bytes_sent) / 1024 / dt,
             "net_recv_kbps": (net.bytes_recv - self._prev_net.bytes_recv) / 1024 / dt,
+            "cpu_temp_c": lhm.READER.cpu_temp(),   # None unless LibreHardwareMonitor serves it (see lhm.py)
         }
         self._prev_time, self._prev_disk, self._prev_net = now, disk, net
         return {

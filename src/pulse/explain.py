@@ -107,6 +107,7 @@ _METRICS = {
     "cpu_percent": ("Processor load", "How busy the processor was, in percent.", "Above 90% for a long time makes the PC feel slow."),
     "ram_percent": ("Memory use", "How much of the RAM was in use, in percent.", "Above 90% makes Windows swap to the disk and slows everything down."),
     "gpu_temp_c": ("Graphics card temperature", "How hot the graphics card was, in degrees C.", "Up to about 80 is normal under load. Above 90 is too hot."),
+    "cpu_temp_c": ("Processor temperature", "How hot the processor was, in degrees C (read from LibreHardwareMonitor).", "Up to about 85 is normal under load; some recent processors run up to 95 by design. A sudden rise at the same load points to cooling."),
     "gpu_util_percent": ("Graphics card load", "How busy the graphics card was, in percent.", "High in games is good: it means the card is used fully."),
 }
 

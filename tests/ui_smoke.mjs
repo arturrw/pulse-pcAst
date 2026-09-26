@@ -110,7 +110,10 @@ async function check(theme, width) {
     if ((width <= 640) !== headHidden) fail("games", `the column headings should be ${width <= 640 ? "hidden" : "shown"} at ${width}px`);
   }));
 
-  await guard("setup", () => settle("setup"));
+  await guard("setup", () => settle("setup", async () => {
+    const t = await s.evalJs("[...document.querySelectorAll('#view h2')].some((e) => e.textContent === 'Processor temperature')");
+    if (!t) fail("setup", "the processor temperature section is missing");
+  }));
   // an unusual moment offers a question for the assistant; the button opens a new chat with it (only when the data has one)
   await guard("unusual", async () => {
     await s.evalJs("go('overview')");

@@ -35,9 +35,12 @@ def main() -> None:
         busy = max(0.0, math.sin((day_frac - 0.3) * math.pi * 2)) * 0.6 + 0.1  # daytime load
         cpu = min(100, 8 + busy * 50 + rng.random() * 10)
         ram_mb = 9000 + busy * 6000 + rng.gauss(0, 300)
-        conn.execute("INSERT OR REPLACE INTO system_metrics VALUES (?,?,?,?,?,?,?,?,?,?)", (
+        conn.execute("INSERT OR REPLACE INTO system_metrics (ts, cpu_percent, cpu_freq_mhz, ram_used_mb, ram_percent, "
+                     "swap_percent, disk_read_mbps, disk_write_mbps, net_sent_kbps, net_recv_kbps, cpu_temp_c) "
+                     "VALUES (?,?,?,?,?,?,?,?,?,?,?)", (
             ts, cpu, 3200 + busy * 1200, ram_mb, ram_mb / 32768 * 100, 5 + busy * 5,
-            rng.random() * 20 * busy, rng.random() * 10 * busy, rng.random() * 300, rng.random() * 2000))
+            rng.random() * 20 * busy, rng.random() * 10 * busy, rng.random() * 300, rng.random() * 2000,
+            38 + cpu * 0.4 + rng.random() * 3))
         gpu = busy * 60 + rng.random() * 10
         conn.execute("INSERT OR REPLACE INTO gpu_metrics VALUES (?,?,?,?,?,?,?,?)", (
             ts, 0, "NVIDIA GeForce RTX (fake)", gpu, 1500 + gpu * 50, 12288, 40 + gpu * 0.4, 30 + gpu * 1.5))

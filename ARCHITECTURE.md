@@ -63,6 +63,7 @@ dashboard never disagree with each other. `pulse collect` is the only writer.
 | `timeline.py` | Assembles `what_happened` for one moment from every other source |
 | `explain.py` | Plain-language explanations used by "what could this be?" in the UI |
 | `games.py` / `gamelib.py` | PresentMon/Afterburner parsing and the user's game list |
+| `autorec.py` | Starts PresentMon by itself when a listed game runs (called from the collector loop); keeps the auto folder under its size limit |
 | `scan.py` | Read-only folder-size scan (`pulse scan`, `largest_folders` tool) |
 | `webui.py` / `webui_page.py` | The `pulse ui` server and its single-page dashboard |
 | `setup_tasks.py` | Registers/inspects the three background Task Scheduler jobs |

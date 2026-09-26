@@ -237,10 +237,10 @@ def largest_folders(path: str = "C:\\", limit: int = 10) -> dict:
 
 
 def _recordings() -> dict[str, Path]:
-    """PresentMon recordings (name = file name without .csv) in data/sessions and data/bench, next to the metrics DB."""
+    """PresentMon recordings (name = file name without .csv) in data/sessions (+ auto/) and data/bench, next to the DB."""
     data = Path(_db_path).parent
     found = {}
-    for sub in ("sessions", "bench"):
+    for sub in ("sessions", "sessions/auto", "bench"):
         for p in (data / sub).glob("*.csv"):
             found.setdefault(p.stem, p)
     return found

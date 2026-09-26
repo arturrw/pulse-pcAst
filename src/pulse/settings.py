@@ -6,9 +6,10 @@ import re
 from pathlib import Path
 
 DEFAULTS = {"collect_interval": 30, "alerts_interval": 15, "alerts_min_severity": "medium",
-            "quiet_on": False, "quiet_from": "23:00", "quiet_to": "09:00", "digest_time": "09:00"}
+            "quiet_on": False, "quiet_from": "23:00", "quiet_to": "09:00", "digest_time": "09:00",
+            "auto_record": False, "auto_record_gb": 5}
 CHOICES = {"collect_interval": (10, 15, 30, 60, 120, 300), "alerts_interval": (5, 15, 30, 60, 120, 360),
-           "alerts_min_severity": ("high", "medium")}
+           "alerts_min_severity": ("high", "medium"), "auto_record_gb": (1, 2, 5, 10, 20, 50)}
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 TIME_KEYS = ("quiet_from", "quiet_to", "digest_time")
 

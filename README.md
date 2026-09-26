@@ -180,6 +180,19 @@ python -m pulse session compare before.csv after.csv --hml-before a.hml --hml-af
 PresentMon/Afterburner timezone offset is detected automatically. Repeat each setting at least twice —
 single runs vary.
 
+### Automatic recording
+With **Setup → Game recording** on, the background collector starts PresentMon by itself when a game
+from your list (Games page) is running, and PresentMon stops when the game exits. It needs no
+administrator rights at run time, only membership in the built-in *Performance Log Users* group
+(joined once from the same page; Windows asks for confirmation, then sign out and in). That group
+lets programs you run start performance traces. Details:
+- The game is noticed at the next sample (up to 30 s), so the first seconds — usually loading — are missed.
+- Nothing starts while another PresentMon runs (a manual recording or `bench_batch.ps1`).
+- Recordings go to `data/sessions/auto/` (~150 MB per hour at ~300 FPS). Sessions under 2 minutes are
+  deleted, and the oldest automatic ones go beyond the size limit (5 GB by default). Your own
+  recordings and benchmark runs are never deleted.
+- If PresentMon fails at once (e.g. no permission yet), it is not retried for an hour.
+
 ### Games tab grouping
 A recording belongs to the game named in its PresentMon file (`Application` column). Benchmark runs
 group into **batches** by file name, `<batch>_<variant>_<repeat>.csv` in `data/bench/` (what

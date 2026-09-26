@@ -575,10 +575,41 @@ async function setup(out) {
         () => ({ alerts_interval: +aInt.value, alerts_min_severity: aSev.value, quiet_on: qOn.checked, quiet_from: qFrom.value, quiet_to: qTo.value })),
       jobCard(job.digest, "Daily summary", "One notification a day with what happened in the last 24 hours. If the PC is off at that time, it shows when you switch it on.",
         field("Send at", dAt, "Pick a time when you are up."), () => ({ digest_time: dAt.value })), msg),
+    autorecSection(s, job.collect, say, pick, field, () => setup(out)),
     h("section", {}, h("h2", {}, "Assistant (Ollama)"), h("div", { class: "item" }, h("span", { class: "badge " + (s.ollama.running ? "ok" : "bad") }, s.ollama.running ? "Running" : "Not running"), h("div", { class: "body" }, h("div", { class: "title" }, "Model " + s.model), h("div", { class: "detail" }, s.ollama.hint || "Ready to answer.")))),
     h("section", {}, h("h2", {}, "Try it"), h("div", { class: "row" }, h("button", { onclick: () => say(() => api("notify", {})) }, "Send a test notification"), h("button", { onclick: () => say(() => api("digest", {})) }, "Run the summary now")),
       h("p", { class: "mute" }, "Traffic per program needs administrator rights. In a terminal opened as administrator run:"), h("p", {}, h("code", {}, s.netstats_command))),
     h("section", {}, h("h2", {}, "Where your data is"), h("code", {}, s.data_folder)));
+}
+
+const GBS = { 1: "1 GB", 2: "2 GB", 5: "5 GB", 10: "10 GB", 20: "20 GB", 50: "50 GB" };
+function autorecSection(s, collectJob, say, pick, field, reload) {
+  const a = s.autorec; const cfg = s.settings; const st = a.state || {};
+  const on = h("input", { type: "checkbox", checked: cfg.auto_record });
+  const cap = pick(GBS, s.choices.auto_record_gb, cfg.auto_record_gb);
+  const problems = [];
+  if (!collectJob.state) problems.push("Turn on the Recorder above: it is what notices a game starting.");
+  if (!a.presentmon) problems.push("PresentMon is not installed. Put PresentMon-...-x64.exe from github.com/GameTechDev/PresentMon/releases into Tools\\PresentMon in your user folder.");
+  if (!a.games.length) problems.push("Your game list is empty. Add a game on the Games page.");
+  const join = a.in_group === true ? null
+    : h("div", { class: "field" }, h("div", { class: "mute small" }, "Recording frame times needs the Windows group “Performance Log Users” (once, Windows asks for confirmation, then sign out and back in). Programs you run can then start performance traces without administrator rights."),
+        h("button", { onclick: () => say(() => api("autorec_join", {})) }, "Allow game recording"));
+  const now = st.status === "recording" ? "Recording " + st.game + " now."
+    : st.status === "failed" ? "Last try failed: " + st.error
+    : st.status === "no_presentmon" ? "A game started, but PresentMon was not found."
+    : st.note || (st.last ? "Last recording: " + st.last : "Nothing recorded yet.");
+  const badge = st.status === "recording" ? "ok" : st.status === "failed" ? "bad" : cfg.auto_record ? "ok" : "mute";
+  return h("section", {}, h("h2", {}, "Game recording"),
+    h("div", { class: "item col" },
+      h("div", { class: "head static" }, h("span", { class: "badge " + badge }, st.status === "recording" ? "Recording" : cfg.auto_record ? "On" : "Off"),
+        h("div", { class: "body" }, h("div", { class: "title" }, "Record my games by themselves"),
+          h("div", { class: "detail" }, "When a game from your list starts, its FPS is recorded until you close it. Sessions under 2 minutes are not kept. " + now))),
+      h("div", { class: "fields" },
+        problems.map((p) => h("div", { class: "mute small" }, p)), join,
+        field("Automatic recording", h("label", {}, on, " on")),
+        field("Keep at most", cap, "The oldest automatic recordings are deleted beyond this. Recordings you start yourself and benchmark runs are never deleted."),
+        h("div", { class: "row" }, h("button", { class: "primary", onclick: async () => {
+          if (await say(() => api("settings", { settings: { auto_record: on.checked, auto_record_gb: +cap.value } }))) reload(); } }, "Save")))));
 }
 
 // Updates: only inside the desktop app (the shell checks for a signed release and installs it).

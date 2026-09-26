@@ -142,9 +142,11 @@ class Collector:
         psutil.cpu_percent(None)
         self._exe_cache: dict[tuple, str] = {}
         self.last_exes: list[dict] = []
+        self.last_names: set[str] = set()
 
     def _processes(self, ts: float, window: float = 1.0) -> list[dict]:
         procs = [p for p in psutil.process_iter(["pid", "name", "create_time"]) if p.pid != 0]  # 0 = System Idle
+        self.last_names = {p.info["name"] for p in procs if p.info["name"]}
         for p in procs:
             try:
                 p.cpu_percent(None)

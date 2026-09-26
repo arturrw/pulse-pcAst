@@ -3,6 +3,7 @@ import time
 from pathlib import Path
 
 from . import db
+from .autorec import AutoRecorder
 from .collectors import Collector
 
 
@@ -25,6 +26,7 @@ def _print_sample(s: dict) -> None:
 def cmd_collect(args: argparse.Namespace) -> None:
     conn = db.connect(args.db)
     collector = Collector()
+    recorder = None if args.once else AutoRecorder(Path(args.db).parent)
     print(f"Writing to {args.db}. Ctrl+C to stop.")
     last_prune = 0.0
     failures = 0
@@ -49,6 +51,11 @@ def cmd_collect(args: argparse.Namespace) -> None:
                 print(f"Sample failed ({failures}/10): {type(e).__name__}: {e}")
                 if failures >= 10:
                     raise
+            if recorder is not None:
+                try:
+                    recorder.tick(collector.last_names)
+                except Exception as e:   # noqa: BLE001 - game recording is extra; it must never stop the collector
+                    print(f"Auto recording failed: {type(e).__name__}: {e}")
             if args.once:
                 break
             time.sleep(max(args.interval - 1, 0))

@@ -5,9 +5,10 @@ checked: the Host must be the local address (DNS-rebinding), a POST's Origin mus
 secret token that is random per run (given once in the address, kept in an HttpOnly SameSite=Strict cookie). Pages are
 served with a content policy that blocks every script but the app's own, and the app builds its screen with textContent
 only, so a hostile process name cannot inject anything. Only a fixed list of actions exists: read the tools, accept or
-forget a finding, ask the assistant, install or remove our own three background jobs, and - the one setting this app
-ever writes on the user's behalf - apply or revert one CS2 video setting, always from an explicit button click, never
-from the assistant's own tool call. Everything else is read-only.
+forget a finding, ask the assistant, install or remove our own three background jobs, add the user to the Performance
+Log Users group so games can be recorded (Windows asks for confirmation), and - the one setting this app ever writes on
+the user's behalf - apply or revert one CS2 video setting, always from an explicit button click, never from the
+assistant's own tool call. Everything else is read-only.
 The server stops when the browser tab has been closed for a few minutes."""
 import json
 import secrets
@@ -19,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ack, alerts, chat, chatstore, cs2settings, db, digest, explain, gamelib, games, paths, report, settings, setup_tasks, tools
+from . import ack, alerts, autorec, chat, chatstore, cs2settings, db, digest, explain, gamelib, games, paths, report, settings, setup_tasks, tools
 from .webui_page import render_page
 
 MAX_BODY = 16 * 1024
@@ -465,7 +466,24 @@ class App:
                 "ollama": self._cached("ollama", lambda: setup_tasks.ollama_status(self.model, self._client_factory), 20),
                 "settings": settings.load(self.db_path.parent), "choices": {k: list(v) for k, v in settings.CHOICES.items()},
                 "data_folder": str(self.db_path.parent), "model": self.model,
-                "netstats_command": "pulse netstats --seconds 60"}
+                "netstats_command": "pulse netstats --seconds 60",
+                "autorec": {"presentmon": gamelib.presentmon_exe() is not None,
+                            "in_group": self._cached("perf_group", autorec.in_perf_log_users, 20),
+                            "games": [g["process"] for g in self.gamelist.load()],
+                            "state": autorec.read_state(self.db_path.parent)}}
+
+    def autorec_join(self) -> dict:
+        """Add this user to Performance Log Users (Windows asks for administrator confirmation)."""
+        sid = autorec.user_sid()
+        if sid is None:
+            raise ApiError("could not read your Windows user id", 500)
+        try:
+            self._launch(autorec.join_command(sid))
+        except OSError as e:
+            raise ApiError(f"could not start PowerShell: {e}", 500) from None
+        self._forget_cache("perf_group")
+        return {"ok": True, "message": "Confirm the Windows prompt, then sign out of Windows and back in: the new group "
+                                       "only applies to a fresh sign-in."}
 
     def job(self, task, action, values=None) -> dict:
         if task not in setup_tasks.TASKS or action not in setup_tasks.ACTIONS:
@@ -659,6 +677,7 @@ class Handler(BaseHTTPRequestHandler):
             ("POST", "job"): lambda: app.job(body.get("task"), body.get("action"), body.get("settings")),
             ("POST", "settings"): lambda: app.save_settings(body.get("settings")),
             ("POST", "notify"): lambda: app.test_notification(),
+            ("POST", "autorec_join"): lambda: app.autorec_join(),
             ("POST", "digest"): lambda: app.run_digest(),
             ("POST", "quit"): lambda: self.server.request_stop() or {"ok": True},
         }

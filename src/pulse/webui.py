@@ -352,8 +352,10 @@ class App:
         ref = rows[0]
         for r in rows:
             r.update(explain.variant_verdict(r, ref))
-        return {"batch": batch, "reference": ref["variant"], "variants": tools._round_deep(rows),
-                "note": "Each variant is the average of its repeats. Differences smaller than the spread between repeats are noise."}
+        title = f"{tools.game_title(game)} benchmark: {batch}"
+        return {"batch": batch, "title": title, "reference": ref["variant"], "variants": tools._round_deep(rows),
+                "recorded": min(r["recorded"] for r in runs), "note": explain.BATCH_NOTE,
+                "markdown": explain.batch_markdown(title, rows)}
 
     def game_report(self, name) -> dict:
         r = tools.game_session_report(_clean_id(name, "name"))

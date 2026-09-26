@@ -373,15 +373,35 @@ def variant_table(groups: dict[str, list[dict]], reference: str | None = None) -
     return [rows[ref]] + [r for v, r in rows.items() if v != ref]
 
 
+def run_variant(path) -> str:
+    """The variant of a run named <tag>_<variant>_<n>.csv, else its whole name."""
+    parts = Path(path).stem.split("_")
+    return parts[-2] if len(parts) >= 3 and parts[-1].isdigit() else Path(path).stem
+
+
+def batch_rows(paths, process: str | None = None) -> list[dict]:
+    """variant_table of the runs in `paths` (grouped by variant), each row with its plain-words verdict."""
+    from . import explain
+
+    groups: dict[str, list[dict]] = {}
+    for p in sorted(paths):
+        try:
+            groups.setdefault(run_variant(p), []).append(analyze(p, process=process)["frames"])
+        except (OSError, ValueError):
+            continue
+    rows = variant_table(groups)
+    for r in rows:
+        r.update(explain.variant_verdict(r, rows[0]))
+    return rows
+
+
 def summarize_runs(paths, process: str | None = None, by_slice: bool = False) -> str:
     """Table of repeated runs grouped by variant. File names are <tag>_<variant>_<n>.csv;
     the spread (max - min over repeats) shows whether a difference between variants is real."""
     groups: dict[str, list[dict]] = {}
     slices: dict[str, list[list[float]]] = {}
     for p in sorted(paths):
-        stem = Path(p).stem
-        parts = stem.split("_")
-        variant = parts[-2] if len(parts) >= 3 and parts[-1].isdigit() else stem
+        variant = run_variant(p)
         try:
             r = analyze(p, process=process)
             groups.setdefault(variant, []).append(r["frames"])

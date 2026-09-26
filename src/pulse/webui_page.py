@@ -493,6 +493,49 @@ async function games(out) {
   if (!game) { gameOpen = null; return library(out, d); }
   gamePage(out, game, recs.filter((r) => r.game.toLowerCase() === game.id.toLowerCase()), d);
 }
+// Copy text for pasting elsewhere; the old execCommand path covers a browser that refuses the clipboard API.
+async function copyText(text, btn) {
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) { const t = h("textarea", {}); t.value = text; document.body.append(t); t.select(); document.execCommand("copy"); t.remove(); }
+  const was = btn.textContent; btn.textContent = "Copied"; setTimeout(() => { btn.textContent = was; }, 1500);
+}
+function saveBlob(blob, filename) {
+  const a = h("a", { href: URL.createObjectURL(blob) }); a.download = filename; document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+// A benchmark batch as a picture to share: the same table as on the page, drawn in the current theme.
+function batchPicture(d) {
+  const css = getComputedStyle(document.documentElement), c = (k) => css.getPropertyValue(k).trim();
+  const font = getComputedStyle(document.body).fontFamily, scale = 2, W = 760, rowH = 50, top = 92;
+  const H = top + 30 + rowH * d.variants.length + 70;
+  const cv = document.createElement("canvas"); cv.width = W * scale; cv.height = H * scale;
+  const g = cv.getContext("2d"); g.scale(scale, scale);
+  g.fillStyle = c("--bg"); g.fillRect(0, 0, W, H);
+  const text = (s, x, y, o = {}) => { g.font = (o.weight || 400) + " " + (o.size || 14) + "px " + font; g.fillStyle = o.color || c("--ink"); g.textAlign = o.align || "left"; g.fillText(s, x, y); };
+  text(d.title, 24, 38, { size: 20, weight: 700 });
+  text("Recorded " + d.recorded + " · average of the repeats of each variant", 24, 62, { color: c("--mute"), size: 13 });
+  // each number with its change against the reference underneath, as on the page
+  const cols = [[24, "Variant", "left"], [330, "Avg FPS", "right"], [440, "Worst 1% FPS", "right"], [540, "0.1% low", "right"], [620, "Spread", "right"], [736, "Result", "right"]];
+  cols.forEach(([x, label, align]) => text(label, x, top + 14, { color: c("--mute"), size: 12, align }));
+  const pct = (x) => (x == null ? "" : (x > 0 ? "+" : "") + x.toFixed(0) + "%");
+  const tone = { ok: c("--ok"), bad: c("--bad"), mute: c("--mute") };
+  const small = { color: c("--mute"), size: 12 };
+  d.variants.forEach((v, i) => {
+    const y = top + 30 + rowH * i;
+    g.fillStyle = c("--line"); g.fillRect(24, y, W - 48, 1);
+    text(v.variant, 24, y + 22, { weight: 600 }); text(v.runs + (v.runs === 1 ? " run" : " runs"), 24, y + 40, small);
+    text(Math.round(v.avg_fps) + " FPS", 330, y + 22, { align: "right" }); text(v.reference ? "reference" : pct(v.avg_change), 330, y + 40, { ...small, align: "right" });
+    text(Math.round(v.low1_fps) + " FPS", 440, y + 22, { align: "right" }); text(v.reference ? "" : pct(v.low1_change), 440, y + 40, { ...small, align: "right" });
+    text(Math.round(v.low01_fps) + " FPS", 540, y + 22, { align: "right" });
+    text(v.spread.toFixed(1), 620, y + 22, { align: "right", color: c("--mute") });
+    text(v.verdict, 736, y + 22, { align: "right", weight: 600, color: tone[v.tone] || c("--ink") });
+  });
+  g.fillStyle = c("--line"); g.fillRect(24, top + 30 + rowH * d.variants.length, W - 48, 1);
+  text(d.note, 24, H - 38, { color: c("--mute"), size: 12 });
+  text("Spread = highest minus lowest average FPS of the repeats.", 24, H - 20, { color: c("--mute"), size: 12 });
+  text("Pulse", W - 24, H - 20, { color: c("--mute"), size: 12, align: "right" });
+  return cv;
+}
 function plural(n, one, many) { return n + " " + (n === 1 ? one : many); }
 // Pick or type a program name; the game joins the library at once and can be recorded right away.
 function addGamePanel(startOpen, done) {
@@ -582,9 +625,11 @@ function gamePage(out, game, recs, d) {
           h("div", { class: "txt mute small" }, v.text)));
         const singles = h("div", { class: "more" });
         fill(singles, b.runs.map((r) => row(r).el));
+        const copyBtn = h("button", { onclick: () => copyText(d.markdown, copyBtn) }, "Copy as Markdown");
+        const picBtn = h("button", { onclick: () => batchPicture(d).toBlob((blob) => blob && saveBlob(blob, "benchmark_" + b.tag + ".png")) }, "Save as picture");
         fill(host, h("div", { class: "vrow head" }, h("div", {}, "Variant"), h("div", {}, "Average FPS"), h("div", {}, "Worst 1% FPS"), h("div", {}, "Result")), rows,
           h("p", { class: "mute small" }, d.note),
-          h("button", { onclick: () => singles.classList.toggle("open") }, "Show the " + b.runs.length + " single runs"), singles);
+          h("div", { class: "row" }, h("button", { onclick: () => singles.classList.toggle("open") }, "Show the " + b.runs.length + " single runs"), copyBtn, picBtn), singles);
       } catch (e) { fill(host, err(e)); }
     };
     const variants = new Set(b.runs.map((r) => r.variant)).size;

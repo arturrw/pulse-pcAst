@@ -512,6 +512,14 @@ def test_the_report_can_be_shown_inside_the_page_and_charts_have_hover_labels():
         s.stop()
 
 
+def test_markdown_escapes_pipes_so_a_name_cannot_break_the_table():
+    from pulse import explain
+    row = {"variant": "a|b", "runs": 2, "avg_fps": 100.0, "avg_change": None, "low1_fps": 50.0, "low1_change": None,
+           "low01_fps": 40.0, "spread": 1.0, "reference": True, "verdict": "Reference"}
+    md = explain.batch_markdown("x", [row]).splitlines()
+    assert md[4].startswith(r"| a\|b | 2 | 100.0 |") and md[4].count(" | ") == 8
+
+
 def test_a_batch_compares_every_variant_with_base_and_calls_noise_noise():
     from test_game_tools import _data_dir
     root = _data_dir()                                                      # batch "t": base (30 fps-ish run) and slow (half the FPS)
@@ -520,6 +528,10 @@ def test_a_batch_compares_every_variant_with_base_and_calls_noise_noise():
     rows = {v["variant"]: v for v in d["variants"]}
     assert d["reference"] == "base" and rows["base"]["verdict"] == "Reference"
     assert rows["slow"]["verdict"] == "Worse" and rows["slow"]["avg_change"] < -30 and "Only one run" in rows["slow"]["text"]
+    md = d["markdown"].splitlines()                                         # the same comparison, ready to paste
+    assert md[0] == "### Counter-Strike 2 benchmark: t" and d["title"] == "Counter-Strike 2 benchmark: t"
+    assert md[2].startswith("| Variant | Runs | Avg FPS | vs base |") and md[4].startswith("| base | 1 |") and "| reference |" in md[4]
+    assert md[5].startswith("| slow | 1 |") and md[5].endswith("| Worse |") and "%" in md[5]
     for bad in (("cs2.exe", "nope"), ("other.exe", "t")):
         try:
             app.game_batch(*bad)

@@ -108,6 +108,11 @@ async function check(theme, width) {
     const headHidden = await s.evalJs("getComputedStyle(document.querySelector('.vrow.head')).display === 'none'");
     await s.evalJs("document.querySelector('.vrow:not(.head)').scrollIntoView({ block: 'center' })");   // the screenshot shows the table
     if ((width <= 640) !== headHidden) fail("games", `the column headings should be ${width <= 640 ? "hidden" : "shown"} at ${width}px`);
+    // the batch can be copied as Markdown and drawn as a picture to share
+    await s.evalJs("[...document.querySelectorAll('button')].find((b) => b.textContent === 'Copy as Markdown').click()");
+    await s.waitFor("[...document.querySelectorAll('button')].some((b) => b.textContent === 'Copied')", "the copy button to confirm", 5000);
+    const pic = await s.evalJs("(async () => { const d = await api('batch?game=cs2.exe&batch=demo'); const cv = batchPicture(d); return [cv.width, cv.height, d.markdown.split(String.fromCharCode(10)).length]; })()");
+    if (!(pic[0] >= 1400 && pic[1] > 300 && pic[2] >= 6)) fail("games", "the batch picture or Markdown is wrong: " + JSON.stringify(pic));
   }));
 
   await guard("setup", () => settle("setup", async () => {

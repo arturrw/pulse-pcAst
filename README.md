@@ -208,6 +208,9 @@ A recording belongs to the game named in its PresentMon file (`Application` colu
 group into **batches** by file name, `<batch>_<variant>_<repeat>.csv` in `data/bench/` (what
 `scripts\bench_batch.ps1` writes). Opening a batch averages repeats per variant and shows change vs.
 `base` with a plain-words verdict; a difference under the repeat spread or under 5% is called noise.
+To share it, **Copy as Markdown** (a table for GitHub, Discord, Reddit or notes) or **Save as picture**
+(a PNG in the current theme, drawn in the browser, nothing uploaded). The same table in the terminal:
+`pulse session summary data\bench --tag <batch> --process cs2.exe --markdown`.
 
 ### CS2 settings A/B (unattended benchmark)
 `scripts\bench_batch.ps1 -Repeats 2 -Tag x -Only base,shadowL,fsr3` runs the workshop FPS benchmark per

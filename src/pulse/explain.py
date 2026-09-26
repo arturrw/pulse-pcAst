@@ -200,6 +200,28 @@ def variant_verdict(row: dict, ref: dict) -> dict:
     return {"verdict": "Better" if better else "Worse", "tone": "ok" if better else "bad", "text": text}
 
 
+BATCH_NOTE = "Each variant is the average of its repeats. Differences smaller than the spread between repeats are noise."
+
+
+def _md(text) -> str:
+    return str(text).replace("|", "\\|").replace("\n", " ")
+
+
+def batch_markdown(title: str, rows: list[dict], note: str = BATCH_NOTE) -> str:
+    """A benchmark batch as a Markdown table to paste anywhere (GitHub, Discord, Reddit, a note). `rows` come from
+    games.variant_table with variant_verdict merged in; the reference row is first."""
+    pct = lambda x: "" if x is None else f"{x:+.0f}%"
+    ref = rows[0]["variant"] if rows else ""
+    out = [f"### {_md(title)}", "",
+           f"| Variant | Runs | Avg FPS | vs {_md(ref)} | 1% low | vs {_md(ref)} | 0.1% low | Spread | Result |",
+           "|---|--:|--:|--:|--:|--:|--:|--:|---|"]
+    for r in rows:
+        out.append(f"| {_md(r['variant'])} | {r['runs']} | {r['avg_fps']:.1f} | {'reference' if r.get('reference') else pct(r['avg_change'])} "
+                   f"| {r['low1_fps']:.1f} | {pct(r['low1_change'])} | {r['low01_fps']:.1f} | {r['spread']:.1f} | {_md(r.get('verdict', ''))} |")
+    out += ["", f"_{_md(note)} Spread = highest minus lowest average FPS over the repeats._"]
+    return "\n".join(out)
+
+
 def game_compare_text(c: dict) -> dict:
     avg = c["avg_fps"]["change_percent"]
     low = c["low1_fps"]["change_percent"]

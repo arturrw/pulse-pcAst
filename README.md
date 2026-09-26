@@ -214,7 +214,9 @@ To share it, **Copy as Markdown** (a table for GitHub, Discord, Reddit or notes)
 
 ### CS2 settings A/B (unattended benchmark)
 `scripts\bench_batch.ps1 -Repeats 2 -Tag x -Only base,shadowL,fsr3` runs the workshop FPS benchmark per
-variant and prints a table. Findings on 1440p, all-max as `base` (264 avg FPS, 1% low 92):
+variant and prints a table. The variants (which `cs2_video.txt` keys each one sets, and the readable name
+the app, the Markdown and the picture show) are in `scripts\bench_variants.json`; add new ones there.
+Findings on 1440p, all-max as `base` (264 avg FPS, 1% low 92):
 
 | variant | avg FPS | 1% low | 0.1% low |
 |---|---|---|---|

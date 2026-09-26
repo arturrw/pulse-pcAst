@@ -1,12 +1,12 @@
 # A/B batch: several settings variants x N repeats through bench_run.ps1, then a summary table.
 #   powershell -File scripts\bench_batch.ps1 [-Repeats 3] [-Tag ab1] [-Scene bots]
 # Variants are interleaved (base, msaa2, shadows, base, ...) so drift (thermals, background load)
-# hits every variant equally. Edit $Variants to test other settings.
+# hits every variant equally. The variants are in bench_variants.json.
 param(
     [int]$Repeats = 3,
     [int]$From = 1,                                    # first repeat to run: resume an interrupted batch with the same -Tag
     [string]$Tag = (Get-Date -Format "MMdd_HHmm"),
-    [string[]]$Only = @("base", "msaa2", "shadowM"),  # variants to run, see $All below
+    [string[]]$Only = @("base", "msaa2", "shadowM"),  # variants to run, see bench_variants.json
     [ValidateSet("benchmark", "bots")][string]$Scene = "benchmark"   # see bench_run.ps1
 )
 
@@ -14,25 +14,19 @@ $Root = Split-Path $PSScriptRoot -Parent
 $Python = Join-Path $Root ".venv\Scripts\python.exe"
 $Bench = Join-Path $PSScriptRoot "bench_run.ps1"
 
-# cs2_video.txt values: shadow_quality 0=Low 1=Medium 2=High; ao_detail 0=Off 1=Low 2=Medium; shaderquality 0=Low 1=High;
-# dynamic_shadows 0=Sun only 1=All; msaa_samples 0/2/4/8
-$All = [ordered]@{
-    base    = @{}
-    msaa2   = @{ 'setting.msaa_samples' = '2' }
-    shadowM = @{ 'setting.videocfg_shadow_quality' = '1' }
-    shadowL = @{ 'setting.videocfg_shadow_quality' = '0' }
-    dynOff  = @{ 'setting.videocfg_dynamic_shadows' = '0' }
-    aoOff   = @{ 'setting.videocfg_ao_detail' = '0' }
-    shaderL = @{ 'setting.shaderquality' = '0' }
-    shadowShaderL = @{ 'setting.videocfg_shadow_quality' = '0'; 'setting.shaderquality' = '0' }
-    fsr2    = @{ 'setting.videocfg_fsr_detail' = '2' }   # FSR keeps 1440p output; value meaning is unverified (0 = off), check FPS grows with it
-    fsr3    = @{ 'setting.videocfg_fsr_detail' = '3' }
-    fsr4    = @{ 'setting.videocfg_fsr_detail' = '4' }
-    fsr3ShadowShaderL = @{ 'setting.videocfg_fsr_detail' = '3'; 'setting.videocfg_shadow_quality' = '0'; 'setting.shaderquality' = '0' }   # the recommended combo
-    res1080 = @{ 'setting.defaultres' = '1920'; 'setting.defaultresheight' = '1080' }   # resolution-bound? (base is 1440p)
-    floor   = @{ 'setting.msaa_samples' = '0'; 'setting.videocfg_shadow_quality' = '0'; 'setting.videocfg_dynamic_shadows' = '0'
-                 'setting.videocfg_ao_detail' = '0'; 'setting.shaderquality' = '0' }   # everything cheap: is there any headroom at all?
+# Variants (settings + the name the app shows) live in bench_variants.json next to this script; add new ones there.
+function Get-BenchVariants([string]$Path) {
+    $all = [ordered]@{}
+    foreach ($v in (Get-Content -Raw -Encoding UTF8 $Path | ConvertFrom-Json).PSObject.Properties) {
+        if ($v.Name.StartsWith("_")) { continue }
+        $set = @{}
+        foreach ($k in $v.Value.set.PSObject.Properties) { $set[$k.Name] = [string]$k.Value }
+        $all[$v.Name] = $set
+    }
+    $all
 }
+if ($MyInvocation.InvocationName -eq '.') { return }   # dot-sourced for tests: functions only
+$All = Get-BenchVariants (Join-Path $PSScriptRoot "bench_variants.json")
 $Only = @($Only | ForEach-Object { $_ -split "," } | Where-Object { $_ })   # -File passes "a,b" as one string
 $Variants = [ordered]@{}
 foreach ($v in $Only) {

@@ -211,12 +211,13 @@ def batch_markdown(title: str, rows: list[dict], note: str = BATCH_NOTE) -> str:
     """A benchmark batch as a Markdown table to paste anywhere (GitHub, Discord, Reddit, a note). `rows` come from
     games.variant_table with variant_verdict merged in; the reference row is first."""
     pct = lambda x: "" if x is None else f"{x:+.0f}%"
-    ref = rows[0]["variant"] if rows else ""
+    ref = (rows[0].get("label") or rows[0]["variant"]) if rows else ""
     out = [f"### {_md(title)}", "",
            f"| Variant | Runs | Avg FPS | vs {_md(ref)} | 1% low | vs {_md(ref)} | 0.1% low | Spread | Result |",
            "|---|--:|--:|--:|--:|--:|--:|--:|---|"]
     for r in rows:
-        out.append(f"| {_md(r['variant'])} | {r['runs']} | {r['avg_fps']:.1f} | {'reference' if r.get('reference') else pct(r['avg_change'])} "
+        name = _md(r.get("label") or r["variant"]) + (f" (`{_md(r['variant'])}`)" if r.get("label", r["variant"]) != r["variant"] else "")
+        out.append(f"| {name} | {r['runs']} | {r['avg_fps']:.1f} | {'reference' if r.get('reference') else pct(r['avg_change'])} "
                    f"| {r['low1_fps']:.1f} | {pct(r['low1_change'])} | {r['low01_fps']:.1f} | {r['spread']:.1f} | {_md(r.get('verdict', ''))} |")
     out += ["", f"_{_md(note)} Spread = highest minus lowest average FPS over the repeats._"]
     return "\n".join(out)

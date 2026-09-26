@@ -523,7 +523,11 @@ function batchPicture(d) {
   d.variants.forEach((v, i) => {
     const y = top + 30 + rowH * i;
     g.fillStyle = c("--line"); g.fillRect(24, y, W - 48, 1);
-    text(v.variant, 24, y + 22, { weight: 600 }); text(v.runs + (v.runs === 1 ? " run" : " runs"), 24, y + 40, small);
+    // a long name gets a smaller font, then an ellipsis, so it never runs into the FPS column
+    let name = v.label || v.variant, size = 14; const fits = () => { g.font = "600 " + size + "px " + font; return g.measureText(name).width <= 220; };
+    while (!fits() && size > 11) size--;
+    while (!fits() && name.length > 4) name = name.slice(0, -2) + "…";
+    text(name, 24, y + 22, { weight: 600, size }); text(plural(v.runs, "run", "runs") + (v.label && v.label !== v.variant ? " · " + v.variant : ""), 24, y + 40, small);
     text(Math.round(v.avg_fps) + " FPS", 330, y + 22, { align: "right" }); text(v.reference ? "reference" : pct(v.avg_change), 330, y + 40, { ...small, align: "right" });
     text(Math.round(v.low1_fps) + " FPS", 440, y + 22, { align: "right" }); text(v.reference ? "" : pct(v.low1_change), 440, y + 40, { ...small, align: "right" });
     text(Math.round(v.low01_fps) + " FPS", 540, y + 22, { align: "right" });
@@ -618,7 +622,7 @@ function gamePage(out, game, recs, d) {
       try {
         const d = await api("batch?game=" + encodeURIComponent(game.id) + "&batch=" + encodeURIComponent(b.tag));
         const rows = d.variants.map((v) => h("div", { class: "vrow" },
-          h("div", { class: "nm" }, h("b", {}, v.variant), h("div", { class: "mute small" }, plural(v.runs, "run", "runs"))),
+          h("div", { class: "nm" }, h("b", {}, v.label || v.variant), h("div", { class: "mute small" }, plural(v.runs, "run", "runs") + (v.label && v.label !== v.variant ? " · " + v.variant : ""))),
           h("div", { class: "av" }, h("div", { class: "lbl mute small" }, "Average FPS"), Math.round(v.avg_fps) + " FPS", h("div", { class: "mute small" }, v.reference ? "reference" : pct(v.avg_change))),
           h("div", { class: "lo" }, h("div", { class: "lbl mute small" }, "Worst 1% FPS"), Math.round(v.low1_fps) + " FPS", h("div", { class: "mute small" }, pct(v.low1_change))),
           h("div", { class: "res" }, h("span", { class: "badge " + v.tone }, v.verdict)),

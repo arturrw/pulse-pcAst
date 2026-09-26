@@ -530,7 +530,9 @@ def test_a_batch_compares_every_variant_with_base_and_calls_noise_noise():
     assert rows["slow"]["verdict"] == "Worse" and rows["slow"]["avg_change"] < -30 and "Only one run" in rows["slow"]["text"]
     md = d["markdown"].splitlines()                                         # the same comparison, ready to paste
     assert md[0] == "### Counter-Strike 2 benchmark: t" and d["title"] == "Counter-Strike 2 benchmark: t"
-    assert md[2].startswith("| Variant | Runs | Avg FPS | vs base |") and md[4].startswith("| base | 1 |") and "| reference |" in md[4]
+    assert md[2].startswith("| Variant | Runs | Avg FPS | vs Your settings |") and "| reference |" in md[4]
+    assert md[4].startswith("| Your settings (`base`) | 1 |") and rows["base"]["label"] == "Your settings"   # from bench_variants.json
+    assert rows["slow"]["label"] == "slow"                                  # a variant the file does not know keeps its name
     assert md[5].startswith("| slow | 1 |") and md[5].endswith("| Worse |") and "%" in md[5]
     for bad in (("cs2.exe", "nope"), ("other.exe", "t")):
         try:

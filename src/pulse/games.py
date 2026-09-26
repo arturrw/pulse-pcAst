@@ -4,9 +4,11 @@ Record PresentMon with --date_time (scripts/record_presentmon.ps1 does). All num
 here, deterministically; the LLM only ever explains a finished report.
 """
 import csv
+import json
 import statistics
 from collections import Counter, defaultdict
 from datetime import datetime, time, timedelta
+from functools import lru_cache
 from pathlib import Path
 
 HITCH_MS = 30.0            # a frame slower than this counts as a hitch
@@ -351,6 +353,19 @@ def format_compare(a: dict, b: dict) -> str:
     return "\n".join(lines)
 
 
+@lru_cache(maxsize=1)
+def variant_labels() -> dict[str, str]:
+    """Readable names of the benchmark variants ({"fsr3": "FSR level 3", ...}) from scripts/bench_variants.json, the
+    same file bench_batch.ps1 takes the settings from. A missing or broken file just means the short names are shown."""
+    from . import paths
+
+    try:
+        data = json.loads(paths.resource("scripts", "bench_variants.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return {k: v["label"] for k, v in data.items() if not k.startswith("_") and isinstance(v, dict) and v.get("label")}
+
+
 def variant_table(groups: dict[str, list[dict]], reference: str | None = None) -> list[dict]:
     """One row per variant from the frame statistics of its repeats: the mean of each number, the spread of the average
     FPS over the repeats (how much one run differs from the next) and the change against the reference variant
@@ -362,7 +377,7 @@ def variant_table(groups: dict[str, list[dict]], reference: str | None = None) -
     rows = {}
     for v, fs in groups.items():
         avg = [f["avg_fps"] for f in fs]
-        rows[v] = {"variant": v, "runs": len(fs), "avg_fps": mean(fs, "avg_fps"), "spread": max(avg) - min(avg),
+        rows[v] = {"variant": v, "label": variant_labels().get(v, v), "runs": len(fs), "avg_fps": mean(fs, "avg_fps"), "spread": max(avg) - min(avg),
                    "low1_fps": mean(fs, "low1_fps"), "low01_fps": mean(fs, "low01_fps"), "p99_ms": mean(fs, "p99_ms")}
     base = rows[ref]
     pct = lambda a, b: 100 * (a / b - 1) if b else None

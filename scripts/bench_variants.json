@@ -1,0 +1,17 @@
+{
+  "_about": "Benchmark variants: cs2_video.txt keys that bench_batch.ps1 sets per variant, and the name the app, the Markdown export and the picture show. shadow_quality 0=Low 1=Medium 2=High; ao_detail 0=Off 1=Low 2=Medium; shaderquality 0=Low 1=High; dynamic_shadows 0=Sun only 1=All; msaa_samples 0/2/4/8; fsr_detail 0=off, 1-4 = FSR levels (exact meaning unverified: FPS grows with it).",
+  "base":    { "label": "Your settings", "set": {} },
+  "msaa2":   { "label": "MSAA 2x", "set": { "setting.msaa_samples": "2" } },
+  "shadowM": { "label": "Shadows Medium", "set": { "setting.videocfg_shadow_quality": "1" } },
+  "shadowL": { "label": "Shadows Low", "set": { "setting.videocfg_shadow_quality": "0" } },
+  "dynOff":  { "label": "Dynamic shadows: sun only", "set": { "setting.videocfg_dynamic_shadows": "0" } },
+  "aoOff":   { "label": "Ambient occlusion off", "set": { "setting.videocfg_ao_detail": "0" } },
+  "shaderL": { "label": "Shaders Low", "set": { "setting.shaderquality": "0" } },
+  "shadowShaderL": { "label": "Shadows + shaders Low", "set": { "setting.videocfg_shadow_quality": "0", "setting.shaderquality": "0" } },
+  "fsr2":    { "label": "FSR level 2", "set": { "setting.videocfg_fsr_detail": "2" } },
+  "fsr3":    { "label": "FSR level 3", "set": { "setting.videocfg_fsr_detail": "3" } },
+  "fsr4":    { "label": "FSR level 4", "set": { "setting.videocfg_fsr_detail": "4" } },
+  "fsr3ShadowShaderL": { "label": "FSR level 3 + shadows & shaders Low", "set": { "setting.videocfg_fsr_detail": "3", "setting.videocfg_shadow_quality": "0", "setting.shaderquality": "0" } },
+  "res1080": { "label": "1080p", "set": { "setting.defaultres": "1920", "setting.defaultresheight": "1080" } },
+  "floor":   { "label": "Everything minimum", "set": { "setting.msaa_samples": "0", "setting.videocfg_shadow_quality": "0", "setting.videocfg_dynamic_shadows": "0", "setting.videocfg_ao_detail": "0", "setting.shaderquality": "0" } }
+}

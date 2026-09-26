@@ -132,6 +132,46 @@ def collect_disks(ts: float) -> list[dict]:
     return disks
 
 
+class LiveSampler:
+    """What the PC is doing right now, cheap enough to ask every couple of seconds: no process list, nothing stored.
+    Rates are over the time since the previous call; a call sooner than MIN_GAP returns the previous answer, so two
+    open tabs asking at once do not produce rates over a few milliseconds."""
+    MIN_GAP = 1.0
+
+    def __init__(self, clock=time.time) -> None:
+        self.clock = clock
+        self._prev_time = clock()
+        self._prev_disk = psutil.disk_io_counters()
+        self._prev_net = psutil.net_io_counters()
+        psutil.cpu_percent(None)
+        self._last: dict | None = None
+
+    def sample(self) -> dict:
+        now = self.clock()
+        if self._last is not None and now - self._prev_time < self.MIN_GAP:
+            return self._last
+        dt = max(now - self._prev_time, 1e-6)
+        disk, net, ram = psutil.disk_io_counters(), psutil.net_io_counters(), psutil.virtual_memory()
+        try:
+            gpus = collect_gpus(now)
+        except Exception:   # noqa: BLE001 - an NVML hiccup must not blank the other numbers
+            gpus = []
+        self._last = {
+            "ts": now,
+            "cpu_percent": psutil.cpu_percent(None),
+            "ram_percent": ram.percent,
+            "ram_used_gb": ram.used / GB,
+            "disk_read_mbps": (disk.read_bytes - self._prev_disk.read_bytes) / MB / dt if disk and self._prev_disk else None,
+            "disk_write_mbps": (disk.write_bytes - self._prev_disk.write_bytes) / MB / dt if disk and self._prev_disk else None,
+            "net_recv_kbps": (net.bytes_recv - self._prev_net.bytes_recv) / 1024 / dt,
+            "net_sent_kbps": (net.bytes_sent - self._prev_net.bytes_sent) / 1024 / dt,
+            "gpu_util_percent": gpus[0]["util_percent"] if gpus else None,
+            "gpu_temp_c": gpus[0]["temp_c"] if gpus else None,
+        }
+        self._prev_time, self._prev_disk, self._prev_net = now, disk, net
+        return self._last
+
+
 class Collector:
     """Keeps previous counters so it can report per-second rates."""
 

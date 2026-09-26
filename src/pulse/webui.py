@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from . import ack, alerts, autorec, chat, chatstore, cs2settings, db, digest, explain, gamelib, games, paths, report, settings, setup_tasks, tools
+from .collectors import LiveSampler
 from .webui_page import render_page
 
 MAX_BODY = 16 * 1024
@@ -61,6 +62,7 @@ class App:
         self._sessions: dict[str, list] = {}       # what the model sees, per chat
         self.chats = chatstore.ChatStore(self.db_path.parent / "chats.json")
         self._current: str | None = None            # the chat a request without an id continues
+        self._live = LiveSampler()                   # started now, so the first reading already spans a real interval
         tools.set_db(self.db_path)
 
     # ---- small cache: the Windows checks take a couple of seconds each
@@ -153,6 +155,11 @@ class App:
                 "ollama": self._cached("ollama", lambda: setup_tasks.ollama_status(self.model, self._client_factory), 20),
                 "recent_alerts": alerts.recent_log(self.db_path, 5),
                 "last_digest": self._last_line("digest.log")}
+
+    def live(self) -> dict:
+        """Load right now, measured by this server itself (not from the database), for the Overview's live row."""
+        with self._lock:
+            return self._live.sample()
 
     def _runner_args(self) -> tuple:
         return (self._task_runner,) if self._task_runner else ()
@@ -651,6 +658,7 @@ class Handler(BaseHTTPRequestHandler):
         sid = self.server.token[:12]          # one conversation per run of the app
         routes = {
             ("GET", "status"): lambda: app.status(),
+            ("GET", "live"): lambda: app.live(),
             ("GET", "findings"): lambda: app.findings(),
             ("GET", "games"): lambda: app.games(),
             ("GET", "game"): lambda: app.game_report(q("name")),

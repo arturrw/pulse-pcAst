@@ -186,6 +186,31 @@ def test_status_reports_the_collector_the_jobs_and_the_model():
         s.stop()
 
 
+def test_live_measures_right_now_and_a_quick_second_ask_gets_the_same_answer():
+    s = Running()
+    try:
+        code, a = s.api("GET", "live")
+        assert code == 200 and 0 <= a["cpu_percent"] <= 100 and 0 < a["ram_percent"] < 100 and a["net_recv_kbps"] >= 0
+        assert s.api("GET", "live")[1]["ts"] == a["ts"]        # within a second: no rates over a few milliseconds
+        assert s.api("GET", "live", cookie=False)[0] == 401
+    finally:
+        s.stop()
+
+
+def test_live_sampler_rates_come_from_the_time_between_calls():
+    from pulse.collectors import LiveSampler
+
+    now = [1000.0]
+    ls = LiveSampler(clock=lambda: now[0])
+    now[0] += 0.5
+    first = ls.sample()
+    now[0] += 0.5
+    assert ls.sample() is first                                   # sooner than MIN_GAP after the start: the same answer
+    now[0] += 2
+    second = ls.sample()
+    assert second is not first and second["ts"] == now[0] and second["disk_read_mbps"] >= 0
+
+
 def test_accepting_and_forgetting_a_finding_persists_and_rejects_bad_ids():
     s = Running()
     try:

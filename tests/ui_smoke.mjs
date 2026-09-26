@@ -75,7 +75,17 @@ async function check(theme, width) {
     // the highlight in the sidebar sits behind the chosen tab
     const ink = await s.evalJs("(() => { const n = document.querySelector('#sidebar'); const on = n.querySelector('button.on'), i = n.querySelector('.ink'); return [Math.abs(parseFloat(i.style.top) - on.offsetTop), parseFloat(i.style.height) - on.offsetHeight]; })()");
     if (ink[0] > 1 || Math.abs(ink[1]) > 1) fail("overview", "the sidebar highlight is not behind the chosen tab: " + JSON.stringify(ink));
+    // the live row keeps measuring: a few points on its lines, and hovering an earlier point says how long ago it was
     await s.evalJs("document.querySelector('main').scrollTop = 0");
+    await s.waitFor("(document.querySelector('.spark .sl').getAttribute('d') || '').split(/[ML]/).length > 4", "the live row to collect a few points", 30000);
+    const cpu = await s.evalJs("document.querySelector('.card.live .big').textContent");
+    if (!/^\d+%$/.test(cpu)) fail("overview", "the live processor value is not a percentage: " + cpu);
+    await s.evalJs("document.querySelector('.spark').scrollIntoView({ block: 'center' })"); await sleep(300);
+    const sp = await s.evalJs("(() => { const r = document.querySelector('.spark').getBoundingClientRect(); return [Math.round(r.left + r.width * 0.6), Math.round(r.top + r.height / 2)]; })()");   // not the far left: the narrow sidebar covers it
+    await s.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: sp[0], y: sp[1] }); await sleep(200);
+    const said = await s.evalJs("document.querySelector('.card.live .small').textContent");
+    if (!/s earlier/.test(said)) fail("overview", "hovering an earlier live point did not say when it was: " + said);
+    await s.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 });
   }));
 
   await guard("ask", () => settle("ask", async () => {

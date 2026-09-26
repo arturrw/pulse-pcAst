@@ -27,7 +27,7 @@ Docs: [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [Cha
 - [x] LLM tools + chat via Ollama (`qwen3:8b`)
 - [x] Disk-fill forecast (needs 24+ h of history)
 - [x] Statistical anomaly detection for state metrics
-- [x] HTML report + desktop-style dashboard (`pulse ui`); no live-updating view
+- [x] HTML report + desktop-style dashboard (`pulse ui`) with a live "right now" row
 
 ## Quick start
 1. Install Python 3.10+ and [Ollama](https://ollama.com), then `ollama pull qwen3:8b`.
@@ -147,7 +147,9 @@ powershell -File scripts\autostart.ps1 install -Task digest   # daily at 09:00
 ```
 pulse ui
 ```
-Tabs: **Overview** (status cards, unusual moments, the same report inline, 6h/24h/3d/7d), **Ask** (chat,
+Tabs: **Overview** (status cards; a "right now" row of processor, memory, graphics card, disk and network
+measured by the app every 2 s with the last 2 minutes drawn, paused while the window is hidden and never
+stored; unusual moments; the same report inline, 6h/24h/3d/7d), **Ask** (chat,
 earlier conversations kept in `chats.json`), **Findings** (accept/forget), **Timeline**, **Games**
 (per-game library), **Setup** (background jobs, Ollama status).
 

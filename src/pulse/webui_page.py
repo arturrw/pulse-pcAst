@@ -72,6 +72,9 @@ code{background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anyw
 .grp{font-size:14px;margin:18px 0 8px;color:var(--mute)}
 .fields{padding:0 14px 12px;display:flex;flex-direction:column;gap:10px}.field{display:flex;flex-direction:column;gap:3px}.field>label{font-weight:600;font-size:13px}.field select,.field input[type=time]{align-self:flex-start;background:var(--card);border:1px solid var(--line);border-radius:8px;padding:5px 8px}
 .row.tight{margin:0}
+.grid.live{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-top:8px}.card.live .big{font-variant-numeric:tabular-nums}
+.spark{display:block;width:100%;margin-top:6px;overflow:visible}.spark .sl{stroke:var(--mute);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.spark .sd{fill:var(--acc);stroke:var(--card);stroke-width:2}.spark .sx{stroke:var(--line);stroke-width:1}
 .upd{display:none;align-items:center;gap:12px;padding:8px 20px;background:var(--chip);border-bottom:1px solid var(--line)}.upd.show{display:flex;animation:drop .28s ease both}.upd .grow{flex:1}
 .verdict{font-size:22px;font-weight:700;margin:4px 0}.verdict.ok{color:var(--ok)}.verdict.warn{color:var(--warn)}.verdict.bad{color:var(--bad)}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -246,6 +249,75 @@ function reportPart() {
   return h("div", {}, un.host, h("section", {}, h("div", { class: "row" }, h("h2", { style: "margin:0;flex:1" }, "Report"), sel), note, frame));
 }
 
+// Right now: measured by the app every 2 s while this page is open and visible; kept across tab switches, never stored.
+const LIVE_EVERY = 2000, LIVE_KEEP = 60;
+const liveHist = [];
+const rate = (kbps) => kbps == null ? "–" : kbps >= 1024 ? (kbps / 1024).toFixed(1) + " MB/s" : Math.round(kbps) + " KB/s";
+const mbs = (v) => v == null ? "–" : (v >= 10 ? v.toFixed(0) : v.toFixed(1)) + " MB/s";
+const LIVE_TILES = [
+  { title: "Processor", get: (s) => s.cpu_percent, big: (s) => Math.round(s.cpu_percent) + "%", scale: [0, 100] },
+  { title: "Memory", get: (s) => s.ram_percent, big: (s) => Math.round(s.ram_percent) + "%", small: (s) => s.ram_used_gb.toFixed(1) + " GB in use", scale: [0, 100] },
+  { title: "Graphics card", get: (s) => s.gpu_util_percent, big: (s) => Math.round(s.gpu_util_percent) + "%", small: (s) => s.gpu_temp_c == null ? "" : s.gpu_temp_c + " °C", scale: [0, 100], gpu: true },
+  { title: "Disk", get: (s) => (s.disk_read_mbps || 0) + (s.disk_write_mbps || 0), big: (s) => mbs((s.disk_read_mbps || 0) + (s.disk_write_mbps || 0)), small: (s) => "read " + mbs(s.disk_read_mbps) + " · write " + mbs(s.disk_write_mbps), floor: 1 },
+  { title: "Network", get: (s) => s.net_recv_kbps + s.net_sent_kbps, big: (s) => rate(s.net_recv_kbps + s.net_sent_kbps), small: (s) => "down " + rate(s.net_recv_kbps) + " · up " + rate(s.net_sent_kbps), floor: 100 },
+];
+function sparkline(tile, onHover) {
+  const svg = document.createElementNS(SVGNS, "svg"); svg.setAttribute("class", "spark"); svg.setAttribute("height", "34");
+  const mk = (tag, attrs) => { const e = document.createElementNS(SVGNS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); svg.append(e); return e; };
+  const line = mk("path", { class: "sl", fill: "none" }); const cross = mk("line", { class: "sx", y1: 0, y2: 34 }); const dot = mk("circle", { class: "sd", r: 3.5 });
+  let pts = [];
+  const draw = (hover) => {
+    const w = svg.clientWidth || 200, vals = liveHist.map(tile.get); const n = vals.length; if (!n) return;
+    const ok = vals.filter((v) => v != null); let [lo, hi] = tile.scale || [0, Math.max(tile.floor || 1, ...ok) * 1.15];
+    const y = (v) => 31 - ((v - lo) / (hi - lo || 1)) * 28, x = (i) => n === 1 ? w : (i / (LIVE_KEEP - 1)) * w + (LIVE_KEEP - n) / (LIVE_KEEP - 1) * w;
+    pts = vals.map((v, i) => v == null ? null : [x(i), y(Math.min(Math.max(v, lo), hi))]);
+    line.setAttribute("d", pts.map((p, i) => p ? (i && pts[i - 1] ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1) : "").join(""));
+    const at = hover == null ? n - 1 : hover; const p = pts[at];
+    dot.style.display = p ? "" : "none"; if (p) { dot.setAttribute("cx", p[0]); dot.setAttribute("cy", p[1]); }
+    cross.style.display = hover == null || !p ? "none" : ""; if (p) { cross.setAttribute("x1", p[0]); cross.setAttribute("x2", p[0]); }
+    svg.setAttribute("aria-label", tile.title + ", last " + Math.round(n * LIVE_EVERY / 1000) + " seconds");
+  };
+  let hovering = null;
+  svg.addEventListener("pointermove", (e) => {
+    const r = svg.getBoundingClientRect(); let best = null, d = Infinity;
+    pts.forEach((p, i) => { if (p && Math.abs(p[0] - (e.clientX - r.left)) < d) { d = Math.abs(p[0] - (e.clientX - r.left)); best = i; } });
+    hovering = best; draw(best); onHover(best);
+  });
+  svg.addEventListener("pointerleave", () => { hovering = null; draw(null); onHover(null); });
+  return { svg, draw: () => draw(hovering) };
+}
+function livePart() {
+  const tiles = LIVE_TILES.map((t) => {
+    const big = h("div", { class: "big" }, "–"), small = h("div", { class: "mute small" }, " ");
+    const show = (i) => { const s = liveHist[i == null ? liveHist.length - 1 : i]; if (!s) return;
+      big.textContent = t.get(s) == null ? "–" : t.big(s);
+      small.textContent = (i == null || i === liveHist.length - 1 ? "" : Math.round((liveHist[liveHist.length - 1].ts - s.ts)) + " s earlier · ") + (t.small ? t.small(s) : "") || " "; };
+    const sp = sparkline(t, (i) => show(i));
+    const el = h("div", { class: "card live" }, h("h3", {}, t.title), big, small, sp.svg);
+    return { t, el, update: () => { el.hidden = !!t.gpu && liveHist.length > 0 && liveHist[liveHist.length - 1].gpu_util_percent == null; sp.draw(); show(null); } };
+  });
+  const note = h("span", { class: "mute small" }, "");
+  const host = h("section", {}, h("div", { class: "row tight" }, h("h2", { style: "margin:0;flex:1" }, "Right now"), note), h("div", { class: "grid live" }, tiles.map((x) => x.el)));
+  const mine = gen; let timer = null, busy = false;
+  const tick = async () => {
+    timer = null; if (mine !== gen || busy) return;
+    if (document.hidden) { note.textContent = "paused while the window is hidden"; return; }
+    busy = true;
+    try {
+      const s = await api("live"); if (mine !== gen) return;
+      if (!liveHist.length || s.ts !== liveHist[liveHist.length - 1].ts) { if (liveHist.length && s.ts - liveHist[liveHist.length - 1].ts > 3 * LIVE_EVERY / 1000) liveHist.length = 0; liveHist.push(s); }
+      if (liveHist.length > LIVE_KEEP) liveHist.splice(0, liveHist.length - LIVE_KEEP);
+      tiles.forEach((x) => x.update()); note.textContent = "updates every " + LIVE_EVERY / 1000 + " s";
+    } catch (e) { note.textContent = "could not measure: " + e.message; }
+    busy = false;
+    if (mine === gen) timer = setTimeout(tick, LIVE_EVERY);
+  };
+  const wake = () => { if (mine !== gen) { document.removeEventListener("visibilitychange", wake); return; } if (!document.hidden && timer === null && !busy) tick(); };
+  document.addEventListener("visibilitychange", wake);
+  requestAnimationFrame(() => { tiles.forEach((x) => x.update()); tick(); });
+  return host;
+}
+
 async function overview(out) {
   const s = await api("status"); const c = s.collector, w = s.windows, a = s.startup, p = s.processes;
   const card = (title, cls, big, small, to) => h("div", { class: "card link", onclick: () => go(to) }, h("h3", {}, title), h("div", { class: "big " + cls }, big), h("div", { class: "mute" }, small));
@@ -259,7 +331,7 @@ async function overview(out) {
       p.available ? card("Running programs", p.flagged ? "bad" : "ok", p.flagged ? p.flagged + " look unusual" : "Nothing unusual", "", "findings") : null,
       s.disk ? card("Disk space", s.disk.free_gb < 30 ? "bad" : "ok", Math.round(s.disk.free_gb) + " GB free", "on " + s.disk.name, "setup") : null,
       h("div", { class: "card link", onclick: () => go("setup") }, h("h3", {}, "Background helpers"), h("div", {}, jobs))),
-    reportPart());
+    livePart(), reportPart());
 }
 
 // ---- the one thing the assistant can propose but never do itself: a CS2 video setting change

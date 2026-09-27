@@ -132,6 +132,21 @@ def test_our_own_background_jobs_are_not_reported_but_look_alikes_are():
     assert [x["name"] for x in r["new_or_changed"]] == [W("", "pulse-alerts")] and r["own_jobs_not_listed"] == 1
 
 
+def test_an_entry_updated_twice_is_one_line_with_what_was_there_first_and_the_worst_version():
+    root, conn = _conn()
+    v1, v2, v3 = (_file(root, "Program Files", "App", f"a{i}.exe") for i in (1, 2, 3))
+    dropped = _file(root, "Users", "x", "dl_risky", "a.exe")
+    for t, exe in ((1000.0, v1), (2000.0, v2), (3000.0, dropped), (4000.0, v3)):
+        persistence.snapshot(conn, now=t, reader=lambda exe=exe: [_item("service", "AppSvc", exe)])
+    r = persistence.assess(conn, 0, checker=lambda paths: {p: ("Valid", "CN=App") for p in paths})
+    assert r["new_or_changed_count"] == 1
+    x = r["new_or_changed"][0]
+    assert x["command"] == v3 and x["changed_from"] == v1 and x["versions"] == 3        # v1 was the baseline
+    assert x["severity"] == "high" and any(w.startswith("an earlier version: runs from") for w in x["reasons"])
+    only = persistence.assess(conn, 3500.0, checker=lambda paths: {p: ("Valid", "CN=App") for p in paths})["new_or_changed"]
+    assert len(only) == 1 and only[0]["changed_from"] == dropped and "versions" not in only[0]   # the version right before
+
+
 def test_an_old_entry_that_already_looks_bad_is_listed_separately():
     root, conn = _conn()
     persistence.snapshot(conn, now=1000.0, reader=lambda: [

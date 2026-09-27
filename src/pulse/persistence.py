@@ -279,15 +279,29 @@ def assess(conn, since: float, checker=binaries.check_signatures) -> dict:
             severity = max(severity, kind_severity, key=_RANK.get)
         if not is_new and severity != "high":
             return None   # an older entry is listed only when it looks really bad; the rest would just be clutter
-        prev = conn.execute("SELECT command FROM autoruns WHERE kind = ? AND name = ? AND command != ? ORDER BY first_seen DESC LIMIT 1",
-                            (kind, name, command)).fetchone() if is_new else None
+        prev = conn.execute("SELECT command FROM autoruns WHERE kind = ? AND name = ? AND command != ? AND first_seen < ? "
+                            "ORDER BY first_seen DESC LIMIT 1", (kind, name, command, first)).fetchone() if is_new else None
         return {"id": f"autorun:{kind}:{name}", "kind": kind, "name": name, "command": command[:200], "detail": detail,
                 "severity": severity,
                 "signature": status if exe and is_new else None, "reasons": reasons,
                 "first_seen": time.strftime("%Y-%m-%d %H:%M", time.localtime(first)),
                 "changed_from": prev[0][:120] if prev else None}
 
-    new = sorted(filter(None, (judge(r, True) for r in new_rows)), key=lambda x: (x["severity"] != "high", x["severity"] != "medium", x["name"]))
+    # An entry updated twice in the window (a browser, an extension) is one line: the current version, what it replaced
+    # before the first update, and the worst of what any of its versions looked like.
+    versions: dict[tuple, list] = {}
+    for r in sorted(new_rows, key=lambda r: r[4]):
+        versions.setdefault((r[0], r[1]), []).append(judge(r, True))
+    new = []
+    for seen in versions.values():
+        x = dict(seen[-1])
+        if len(seen) > 1:
+            x["severity"] = max((v["severity"] for v in seen), key=_RANK.get)
+            x["reasons"] = list(dict.fromkeys(x["reasons"] + [f"an earlier version: {why}" for v in seen[:-1]
+                                                              for why in v["reasons"] if why not in x["reasons"]]))
+            x["changed_from"], x["versions"] = seen[0]["changed_from"], len(seen)
+        new.append(x)
+    new.sort(key=lambda x: (x["severity"] != "high", x["severity"] != "medium", x["name"]))
     old = sorted(filter(None, (judge(r, False) for r in rows if r not in new_rows)), key=lambda x: x["name"])
     return {"available": True, "baseline_at": time.strftime("%Y-%m-%d %H:%M", time.localtime(base)),
             "entries_known": total, "new_or_changed": new[:MAX_LISTED], "new_or_changed_count": len(new),

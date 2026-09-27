@@ -36,7 +36,13 @@ issues a single pass hides. If you change `SYSTEM_PROMPT` in `chat.py`, run this
 
 CI (`.github/workflows/tests.yml`) runs the unit tests on Python 3.10 and 3.13, plus a headless-Chrome
 smoke test of every page in `pulse ui` (light/dark, wide/narrow). It does not run `eval_tools.py`
-(no Ollama in CI).
+(no Ollama in CI). To catch prompt regressions anyway, run it nightly on your own PC:
+```powershell
+powershell -File scripts\autostart.ps1 install -Task eval   # daily at 03:00 (-At hh:mm to change), --runs 3
+```
+Each run adds a line to `data\eval.log` and writes the full output to `data\eval_last.txt`. A notification
+comes up only when the score fell more than 3 points against the last run of the same model, or when
+Ollama was not running.
 
 ## Adding a chat tool
 

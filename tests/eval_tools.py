@@ -1,7 +1,12 @@
 """Regression check: right tool per question, and answers that agree with the tool results.
 
-Run: python tests/eval_tools.py [--model qwen3:8b] [--db PATH] [--slow] [--runs N]
+Run: python tests/eval_tools.py [--model qwen3:8b] [--db PATH] [--slow] [--runs N] [--notify]
 Needs a running Ollama. Each question starts a fresh conversation. Exit code 1 on any failure.
+
+--notify is for the nightly job (scripts/autostart.ps1 install -Task eval): the full output goes to data/eval_last.txt,
+one line per run to data/eval.log, and a Windows notification comes up when the score dropped against the last run of
+the same model or Ollama was not running. Prompt regressions show up the next morning instead of whenever someone
+remembers to run this by hand (CI has no Ollama).
 """
 import argparse
 import json
@@ -10,6 +15,7 @@ import re
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 import ollama
 
@@ -655,8 +661,50 @@ def run_case(client, model: str, question: str, num_ctx: int):
     return set(called), results, answer
 
 
+DROP_POINTS = 3.0    # a smaller dip between two nightly runs is the model's own noise, not a regression
+_SCORE = re.compile(r" (\S+) runs=\d+ (\d+)/(\d+) ")
+
+
+def compare_with_last(log_lines: list[str], model: str, passed: int, total: int) -> tuple[str, str | None]:
+    """(status for the log, notification text or None). The baseline is the last scored run of the same model."""
+    rate = 100 * passed / max(total, 1)
+    for line in reversed(log_lines):
+        m = _SCORE.search(line)
+        if m and m.group(1) == model:
+            before = 100 * int(m.group(2)) / max(int(m.group(3)), 1)
+            if rate < before - DROP_POINTS:
+                return "drop", f"{model}: {passed}/{total} ({rate:.0f}%), last run {before:.0f}%."
+            return "ok", None
+    return ("ok", None) if passed == total else ("first", f"{model}: {passed}/{total} ({rate:.0f}%) on the first nightly run.")
+
+
+class _Tee:
+    def __init__(self, *streams):
+        self.streams = [s for s in streams if s is not None]
+
+    def write(self, text):
+        for s in self.streams:
+            s.write(text)
+
+    def flush(self):
+        for s in self.streams:
+            s.flush()
+
+
+def _nightly_log(data: Path, stamp: str, status: str, text: str) -> None:
+    with open(data / "eval.log", "a", encoding="utf-8") as f:
+        f.write(f"{stamp} [{status}] {text}\n")
+
+
+def _nightly_notify(title: str, body: str) -> None:
+    from pulse import alerts
+
+    alerts.notify(title, body[:230])
+
+
 def main() -> int:
-    sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # answers may hold characters cp1251 cannot print
+    if sys.stdout is not None:   # None under pythonw (the nightly job): there the output only goes to data/eval_last.txt
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # answers may hold characters cp1251 cannot print
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="qwen3:8b")
     p.add_argument("--db", default=str(tools.db.DEFAULT_DB))
@@ -664,12 +712,24 @@ def main() -> int:
     p.add_argument("--slow", action="store_true", help="include the folder scan case (up to ~45 s)")
     p.add_argument("--runs", type=int, default=1, help="repeat each question (models are non-deterministic)")
     p.add_argument("--scope-only", action="store_true", help="only the scope / safety cases (off-topic, read-only, injection)")
+    p.add_argument("--notify", action="store_true", help="nightly mode: log to data/eval.log, notify on a drop (see the top of this file)")
     args = p.parse_args()
 
+    data, stamp = Path(args.db).parent, time.strftime("%Y-%m-%d %H:%M")
+    if args.notify:
+        sys.stdout = _Tee(sys.stdout, open(data / "eval_last.txt", "w", encoding="utf-8"))
     client = ollama.Client()
+    try:
+        client.list()
+    except Exception as e:   # noqa: BLE001 - "Ollama is not running" comes in many exception types
+        print(f"Ollama is not reachable: {type(e).__name__}: {e}")
+        if args.notify:
+            _nightly_log(data, stamp, "error", f"{args.model} Ollama is not reachable")
+            _nightly_notify("Nightly assistant check did not run", "Ollama is not running, so the model could not be checked.")
+        return 2
     empty_db = os.path.join(tempfile.mkdtemp(), "empty.db")
     cases = CASES[-SCOPE_CASES:] if args.scope_only else CASES + (SLOW_CASES if args.slow else [])
-    failures = 0
+    failures, failed = 0, []
     injected = injected_db()
     for question, must, must_not, checks, db_override in cases:
         tools.set_db({"EMPTY": empty_db, "INJECT": injected}.get(db_override, args.db))
@@ -688,6 +748,8 @@ def main() -> int:
                 except (KeyError, IndexError, TypeError) as e:   # e.g. the expected tool was not called at all
                     problems.append(f"{c.__name__} could not check the answer ({type(e).__name__}: {e})")
             failures += bool(problems)
+            if problems and label not in failed:
+                failed.append(label)
             print(f"[{'FAIL' if problems else 'PASS'}] {label}  -> {sorted(called)}")
             for m in problems:
                 print(f"       {m}")
@@ -695,6 +757,17 @@ def main() -> int:
                 print(f"       answer: {answer[:300]}")
     total = len(cases) * args.runs
     print(f"\n{total - failures}/{total} passed")
+    if args.notify:
+        try:
+            before = (data / "eval.log").read_text(encoding="utf-8").splitlines()
+        except OSError:
+            before = []
+        status, note = compare_with_last(before, args.model, total - failures, total)
+        _nightly_log(data, stamp, status, f"{args.model} runs={args.runs} {total - failures}/{total} "
+                                          f"failed: {' | '.join(failed) or '-'}")
+        if note:
+            _nightly_notify("Nightly assistant check: the score dropped" if status == "drop" else "Nightly assistant check",
+                            note + (f" Failed: {failed[0]}" if failed else "") + " Details in data/eval_last.txt.")
     return 1 if failures else 0
 
 

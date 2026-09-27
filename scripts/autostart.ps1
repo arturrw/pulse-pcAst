@@ -4,10 +4,11 @@
 #   powershell -File scripts\autostart.ps1 status
 #   powershell -File scripts\autostart.ps1 install -Task alerts   # notifications, checked every 15 min
 #   powershell -File scripts\autostart.ps1 install -Task digest   # one summary notification every morning at 09:00
+#   powershell -File scripts\autostart.ps1 install -Task eval -At 03:00   # developers: nightly model check, needs Ollama
 param([Parameter(Mandatory)][ValidateSet('install', 'remove', 'status')][string]$Action,
-      [ValidateSet('collect', 'alerts', 'digest')][string]$Task = 'collect',
+      [ValidateSet('collect', 'alerts', 'digest', 'eval')][string]$Task = 'collect',
       [string]$Exe = '',   # the installed app's windowless exe; without it the checkout's .venv python is used
-      [ValidatePattern('^([01]\d|2[0-3]):[0-5]\d$')][string]$At = '09:00',   # digest: time of day
+      [ValidatePattern('^([01]\d|2[0-3]):[0-5]\d$')][string]$At = '09:00',   # digest (eval: 03:00 unless given): time of day
       [ValidateRange(1, 1440)][int]$Minutes = 15,                              # alerts: how often to check
       [ValidateRange(5, 3600)][int]$Interval = 30)                             # collect: seconds between samples
 
@@ -40,6 +41,20 @@ switch ($Action) {
                 -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -MultipleInstances IgnoreNew -StartWhenAvailable
             Register-ScheduledTask -TaskName $TaskName -Action $act -Trigger $trg -Settings $set `
                 -Description 'pulse morning digest (one summary notification)' -Force | Out-Null
+            Write-Host "Installed '$TaskName' (runs every day at $At)."
+            return
+        }
+        if ($Task -eq 'eval') {
+            # A source checkout only (the installed app has no tests). Each question 3 times: one pass is too noisy.
+            # tests\eval_tools.py --notify logs to data\eval.log and shows a notification only when the score drops.
+            if ($Exe) { throw 'The nightly model check runs from a source checkout, not the installed app.' }
+            if (-not $PSBoundParameters.ContainsKey('At')) { $At = '03:00' }
+            $act = New-ScheduledTaskAction -Execute $Pythonw -Argument 'tests\eval_tools.py --runs 3 --notify' -WorkingDirectory $Root
+            $trg = New-ScheduledTaskTrigger -Daily -At $At
+            $set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+                -ExecutionTimeLimit (New-TimeSpan -Hours 3) -MultipleInstances IgnoreNew -StartWhenAvailable
+            Register-ScheduledTask -TaskName $TaskName -Action $act -Trigger $trg -Settings $set `
+                -Description 'pulse nightly check of the chat model (tests\eval_tools.py)' -Force | Out-Null
             Write-Host "Installed '$TaskName' (runs every day at $At)."
             return
         }

@@ -147,9 +147,12 @@ deletes the trace file afterward (`--keep` to keep it). Nothing stays running el
 ## Morning digest
 `pulse digest` — one daily notification: "nothing new" or what needs a look (open findings, new
 autostart entry, flagged process, unusual stretch, near-full disk). Accepted risks are counted, shown,
-never hidden.
+never hidden. Once a week (when both weeks have 24+ h recorded) a second notification compares this week
+with the last: processor and graphics card temperature, how many GB each disk gained, new autostart entries
+(an update or a per-user service reborn at logon is not "new"), and hours of game recordings for context.
 ```powershell
 pulse digest --dry-run
+pulse digest --week --dry-run   # the weekly comparison right now
 powershell -File scripts\autostart.ps1 install -Task digest   # daily at 09:00
 ```
 

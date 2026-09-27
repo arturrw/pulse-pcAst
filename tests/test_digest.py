@@ -93,6 +93,68 @@ def test_a_notification_that_cannot_be_shown_is_still_logged():
     assert d["shown"] is False and "digest.log" in [p.name for p in path.parent.iterdir()]
 
 
+def _two_weeks(cpu_temps=(50.0, 60.0), gpu_temps=(55.0, 55.0), used=(400.0, 403.0, 415.0), hours_per_week=48) -> Path:
+    """Samples every 10 min: `hours_per_week` h in each of the last two weeks, disk used at the start, middle and end."""
+    path = Path(tempfile.mkdtemp()) / "t.db"
+    now = time.time()
+    with db.connect(path) as conn:
+        for week, (ct, gt) in enumerate(zip(cpu_temps, gpu_temps)):   # 0 = last week, 1 = this week
+            start = now - (2 - week) * digest.WEEK + 3600
+            for i in range(hours_per_week * 6 + 1):
+                ts = start + 600 * i
+                conn.execute("INSERT INTO system_metrics (ts, cpu_percent, cpu_temp_c) VALUES (?,?,?)", (ts, 10.0, ct))
+                conn.execute("INSERT INTO gpu_metrics (ts, idx, temp_c) VALUES (?,0,?)", (ts, gt))
+        for t, u in zip((now - 2 * digest.WEEK - 60, now - digest.WEEK - 60, now - 60), used):
+            conn.execute("INSERT INTO disk_usage VALUES (?,?,?,?)", (t, "C:\\", 1000.0, u))
+    tools.set_db(path)
+    return path
+
+
+def test_the_week_is_compared_with_the_one_before():
+    path = _two_weeks()
+    conn = db.connect(path)
+    base = {"kind": "service", "name": "Known", "command": "C:\\Windows\\k.exe", "detail": ""}
+    user_svc = {"kind": "service", "name": "CDPUserSvc_a45ae", "command": "svchost.exe -k UnistackSvcGroup", "detail": ""}
+    persistence.snapshot(conn, now=time.time() - 13 * 86400, reader=lambda: [base, user_svc])
+    # the next logon: the per-user service comes back under a new suffix and Known gets an update; neither is new
+    persistence.snapshot(conn, now=time.time() - 2 * 86400, reader=lambda: [
+        {**base, "command": "C:\\Windows\\k2.exe"}, {**user_svc, "name": "CDPUserSvc_b6638"},
+        {**base, "name": "NewThing", "command": "C:\\x.exe"}])
+    w = digest.build_week()
+    text = "\n".join(w["lines"])
+    assert "Processor temperature: average 60 °C (last week 50), peak 60 °C (last week 50)" in text
+    assert "Graphics card temperature: average 55 °C (last week 55)" in text
+    assert "Disk C: +12.0 GB this week (last week +3.0 GB)" in text
+    assert "New autostart entries: 1 this week (NewThing), 0 last week" in text      # the baseline is not "new"
+    assert "Recorded 48 h this week, 48 h last week" in text
+    assert w["body"].startswith("CPU 60 °C (50)") and "C: +12 GB (+3)" in w["body"] and len(w["body"]) <= digest.MAX_BODY
+
+
+def test_a_week_without_a_number_leaves_it_out_and_says_the_comparison_is_weak():
+    _two_weeks(hours_per_week=5)
+    with db.connect(tools._db_path) as conn:
+        conn.execute("DELETE FROM disk_usage WHERE ts < ?", (time.time() - digest.WEEK - 3600,))   # no disk figure two weeks ago
+        conn.execute("DELETE FROM gpu_metrics WHERE ts < ?", (time.time() - digest.WEEK,))
+    w = digest.build_week()
+    assert not any(line.startswith(("Disk", "Graphics")) for line in w["lines"])
+    assert w["body"].startswith("Only 5 h recorded this week and 5 h last week")
+
+
+def test_the_scheduled_digest_adds_the_weekly_comparison_once_a_week_and_only_with_enough_history():
+    path = _two_weeks()
+    shown = []
+    d = digest.run(path, notify_fn=lambda t, b: shown.append(t) or True, refresh_report=False, weekly_if_due=True)
+    assert "week" in d and shown[-1] == "This week against the last one"
+    assert "[week]" in (path.parent / "digest.log").read_text(encoding="utf-8")
+    d = digest.run(path, notify_fn=lambda t, b: shown.append(t) or True, refresh_report=False, weekly_if_due=True)
+    assert "week" not in d and len(shown) == 3          # the next day: only the daily one
+    assert digest.week_due(path, now=time.time() + 6.6 * 86400) is False   # no history that far ahead: nothing to compare
+    d = digest.run(_two_weeks(hours_per_week=5), notify_fn=lambda t, b: True, refresh_report=False, weekly_if_due=True)
+    assert "week" not in d                               # too little recorded in each week
+    d = digest.run(_two_weeks(), notify_fn=lambda t, b: True, refresh_report=False)
+    assert "week" not in d                               # "run the summary now" from the app sends only the daily one
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

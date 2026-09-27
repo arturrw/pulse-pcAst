@@ -702,12 +702,12 @@ async function setup(out) {
       jobCard(job.alerts, "Problem alerts", "Shows a Windows notification when something needs attention.",
         [field("Check every", aInt), field("Tell me about", aSev), field("Quiet hours", h("div", { class: "row tight" }, h("label", {}, qOn, " stay silent from "), qFrom, " to ", qTo), "Nothing is shown in this time. Anything that comes up meanwhile is shown afterwards.")],
         () => ({ alerts_interval: +aInt.value, alerts_min_severity: aSev.value, quiet_on: qOn.checked, quiet_from: qFrom.value, quiet_to: qTo.value })),
-      jobCard(job.digest, "Daily summary", "One notification a day with what happened in the last 24 hours. If the PC is off at that time, it shows when you switch it on.",
+      jobCard(job.digest, "Daily summary", "One notification a day with what happened in the last 24 hours, and once a week this week against the last (temperatures, disks, new autostart entries). If the PC is off at that time, it shows when you switch it on.",
         field("Send at", dAt, "Pick a time when you are up."), () => ({ digest_time: dAt.value })), msg),
     autorecSection(s, job.collect, say, pick, field, () => setup(out)),
     cpuTempSection(s.cpu_temp),
     h("section", {}, h("h2", {}, "Assistant (Ollama)"), h("div", { class: "item" }, h("span", { class: "badge " + (s.ollama.running ? "ok" : "bad") }, s.ollama.running ? "Running" : "Not running"), h("div", { class: "body" }, h("div", { class: "title" }, "Model " + s.model), h("div", { class: "detail" }, s.ollama.hint || "Ready to answer.")))),
-    h("section", {}, h("h2", {}, "Try it"), h("div", { class: "row" }, h("button", { onclick: () => say(() => api("notify", {})) }, "Send a test notification"), h("button", { onclick: () => say(() => api("digest", {})) }, "Run the summary now")),
+    h("section", {}, h("h2", {}, "Try it"), h("div", { class: "row" }, h("button", { onclick: () => say(() => api("notify", {})) }, "Send a test notification"), h("button", { onclick: () => say(() => api("digest", {})) }, "Run the summary now"), h("button", { onclick: () => say(() => api("digest", { week: true })) }, "Compare this week with the last")),
       h("p", { class: "mute" }, "Traffic per program needs administrator rights. In a terminal opened as administrator run:"), h("p", {}, h("code", {}, s.netstats_command))),
     h("section", {}, h("h2", {}, "Where your data is"), h("code", {}, s.data_folder)));
 }

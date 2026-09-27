@@ -414,6 +414,9 @@ def test_test_notification_and_digest_now_use_the_notifier_and_report_what_they_
         d = s.api("POST", "digest", {})[1]
         assert d["title"].startswith("Morning digest") and d["shown"] is True and s.notified[-1][0] == d["title"]
         assert (s.path.parent / "digest.log").exists() and (s.path.parent / "reports" / "latest.html").exists()
+        w = s.api("POST", "digest", {"week": True})[1]
+        assert w["title"] == "This week against the last one" and s.notified[-1][0] == w["title"] and w["lines"]
+        assert s.api("POST", "digest", {"week": "yes"})[1]["title"].startswith("Morning digest")   # only a real true
     finally:
         s.stop()
 

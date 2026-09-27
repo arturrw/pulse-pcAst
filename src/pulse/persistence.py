@@ -177,6 +177,15 @@ def snapshot(conn, now: float | None = None, reader=read_items) -> int:
     return len(items)
 
 
+_PER_USER_SUFFIX = re.compile(r"_[0-9a-f]{4,8}$", re.IGNORECASE)
+
+
+def entry_name(kind: str, name: str) -> str:
+    """The name an entry keeps across logons: Windows creates its per-user services anew at every logon with a random
+    suffix (CDPUserSvc_a45ae, then CDPUserSvc_b6638), so for services the suffix is dropped."""
+    return _PER_USER_SUFFIX.sub("", name) if kind == "service" else name
+
+
 def last_snapshot(conn) -> float | None:
     return conn.execute("SELECT MAX(last_seen) FROM autoruns").fetchone()[0]
 

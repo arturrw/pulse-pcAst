@@ -180,7 +180,15 @@ def cmd_ack(args: argparse.Namespace) -> None:
 def cmd_digest(args: argparse.Namespace) -> None:
     from . import digest
 
-    d = digest.run(args.db, dry_run=args.dry_run, refresh_report=not args.no_report)
+    if args.week:
+        w = digest.run_week(args.db, dry_run=args.dry_run)
+        print(w["title"])
+        for line in w["lines"]:
+            print("  " + line)
+        if not args.dry_run:
+            print("Notification shown." if w.get("shown") else "The notification could not be shown; it is in data/digest.log.")
+        return
+    d = digest.run(args.db, dry_run=args.dry_run, refresh_report=not args.no_report, weekly_if_due=True)
     print(d["title"])
     for line in d["lines"]:
         print("  " + line)
@@ -188,6 +196,10 @@ def cmd_digest(args: argparse.Namespace) -> None:
         print("  ! " + item)
     if not args.dry_run:
         print("Notification shown." if d.get("shown") else "The notification could not be shown; it is in data/digest.log.")
+    if "week" in d:
+        print(d["week"]["title"])
+        for line in d["week"]["lines"]:
+            print("  " + line)
 
 
 def cmd_netstats(args: argparse.Namespace) -> None:
@@ -286,6 +298,7 @@ def main(argv: list[str] | None = None) -> int:
     dg = sub.add_parser("digest", help="a short summary of the last 24 h as one notification (and a fresh report)")
     dg.add_argument("--dry-run", action="store_true", help="only print it; show, log and write nothing")
     dg.add_argument("--no-report", action="store_true", help="do not refresh data/reports/latest.html")
+    dg.add_argument("--week", action="store_true", help="only the weekly comparison: the last 7 days against the 7 before")
     dg.add_argument("--db", default=str(db.DEFAULT_DB))
     dg.set_defaults(func=cmd_digest)
 

@@ -533,7 +533,10 @@ class App:
     def test_notification(self) -> dict:
         return {"ok": bool(alerts.send(self._notify, "pulse test", "If you can read this, notifications reach you.", "setup"))}
 
-    def run_digest(self) -> dict:
+    def run_digest(self, week=False) -> dict:
+        if week is True:
+            w = digest.run_week(self.db_path, notify_fn=self._notify)
+            return {"title": w["title"], "lines": w["lines"], "todo": [], "shown": w.get("shown")}
         d = digest.run(self.db_path, notify_fn=self._notify, refresh_report=True)
         self._forget_cache()
         return {"title": d["title"], "lines": d["lines"], "todo": d["todo"], "shown": d.get("shown")}
@@ -690,7 +693,7 @@ class Handler(BaseHTTPRequestHandler):
             ("POST", "settings"): lambda: app.save_settings(body.get("settings")),
             ("POST", "notify"): lambda: app.test_notification(),
             ("POST", "autorec_join"): lambda: app.autorec_join(),
-            ("POST", "digest"): lambda: app.run_digest(),
+            ("POST", "digest"): lambda: app.run_digest(body.get("week")),
             ("POST", "quit"): lambda: self.server.request_stop() or {"ok": True},
         }
         fn = routes.get((method, name))

@@ -80,6 +80,8 @@ powershell -File scripts\autostart.ps1 install
 powershell -File scripts\autostart.ps1 status
 powershell -File scripts\autostart.ps1 remove
 ```
+With the Pulse app installed, turn the jobs on from its Setup page instead: a job from a checkout records into the
+checkout's `data` folder, where the app does not look, so the script refuses that unless you add `-FromCheckout`.
 ~5-10 MB/day at the default 30 s interval; history older than 90 days is pruned automatically
 (`collect --keep-days N`, `0` = keep all). Manual cleanup: `pulse prune --days 30`.
 

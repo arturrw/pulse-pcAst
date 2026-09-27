@@ -5,9 +5,13 @@
 #   powershell -File scripts\autostart.ps1 install -Task alerts   # notifications, checked every 15 min
 #   powershell -File scripts\autostart.ps1 install -Task digest   # one summary notification every morning at 09:00
 #   powershell -File scripts\autostart.ps1 install -Task eval -At 03:00   # developers: nightly model check, needs Ollama
+# When the Pulse app is installed, its jobs must run the app (-Exe ...\Pulse\backend\pulsew.exe, as its Setup page does):
+# a job from this checkout writes to the checkout's data folder and the app shows no data. That is refused unless
+# -FromCheckout says it is meant (the dev-only eval job always runs from the checkout).
 param([Parameter(Mandatory)][ValidateSet('install', 'remove', 'status')][string]$Action,
       [ValidateSet('collect', 'alerts', 'digest', 'eval')][string]$Task = 'collect',
       [string]$Exe = '',   # the installed app's windowless exe; without it the checkout's .venv python is used
+      [switch]$FromCheckout,   # run collect/alerts/digest from this checkout even though the app is installed
       [ValidatePattern('^([01]\d|2[0-3]):[0-5]\d$')][string]$At = '09:00',   # digest (eval: 03:00 unless given): time of day
       [ValidateRange(1, 1440)][int]$Minutes = 15,                              # alerts: how often to check
       [ValidateRange(5, 3600)][int]$Interval = 30)                             # collect: seconds between samples
@@ -24,6 +28,13 @@ switch ($Action) {
         } else {
             $Pfx = '-m pulse '
             if (-not (Test-Path $Pythonw)) { throw "Not found: $Pythonw (create .venv and run: pip install -e .)" }
+            $Installed = Join-Path $env:LOCALAPPDATA 'Pulse\backend\pulsew.exe'
+            if ($Task -ne 'eval' -and -not $FromCheckout -and (Test-Path $Installed)) {
+                throw ("The Pulse app is installed, so the '$Task' job should run it, not this checkout: from here it would " +
+                       "write to the checkout's data folder and the app would show no data. Use the app's Setup page, or:`n" +
+                       "  powershell -File scripts\autostart.ps1 install -Task $Task -Exe `"$Installed`"`n" +
+                       "Add -FromCheckout only if you really want this checkout to record instead of the app.")
+            }
         }
         # The app used to be called pcassist, then vigil; a job of the same kind under an old name is replaced, not left running next to this one.
         foreach ($Old in @("pcassist-$Task", "vigil-$Task")) {

@@ -109,7 +109,9 @@ def test_accepted_findings_are_marked_and_not_counted_by_the_tool():
     db = Path(tempfile.mkdtemp()) / "t.db"
     tools.set_db(db)
     real = winhealth.read_raw
-    winhealth.read_raw = lambda hours: _raw(defender=_defender(realtime=False))
+    # the tool compares with the real clock, not NOW: fresh signatures must be fresh today, or they also get flagged as old
+    fresh = (datetime.now() - timedelta(hours=12)).strftime("%Y-%m-%dT%H:%M:%S.0000000+03:00")
+    winhealth.read_raw = lambda hours: _raw(defender={**_defender(realtime=False), "signatures": fresh, "quick_scan": fresh})
     try:
         assert tools.system_health(24)["findings_high"] == 1
         ack.acknowledge(db, "defender-realtime-off", "on purpose")

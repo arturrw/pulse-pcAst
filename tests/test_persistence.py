@@ -91,6 +91,18 @@ def test_a_per_user_service_reborn_at_logon_is_not_new_but_a_changed_one_is():
     assert persistence.entry_name("run_key", "Tool_beef") == "Tool_beef"            # only services get the suffix
 
 
+def test_a_task_windows_re_creates_under_a_new_guid_is_not_new():
+    root, conn = _conn()
+    task = lambda guid, cmd="<COM handler>": _item("scheduled_task", W("", "SoftLanding", "S-1-5-21-1", "SoftLandingDeferralTask-{" + guid + "}"), cmd)
+    persistence.snapshot(conn, now=1000.0, reader=lambda: [task("2918a771-c30a-487f-b976-9487bfe2652c")])
+    persistence.snapshot(conn, now=2000.0, reader=lambda: [task("ddeb5d7f-15c5-4fed-94d4-2e6917e69c5e"),
+                                                           task("1481fcb4-9382-4f12-a36d-c330900b6e61", "C:" + BS + "x.exe")])
+    r = persistence.assess(conn, 0)
+    assert [x["command"] for x in r["new_or_changed"]] == ["C:" + BS + "x.exe"]        # same name, other command: reported
+    assert persistence.entry_name("scheduled_task", W("", "T-{2918A771-C30A-487F-B976-9487BFE2652C}")) == W("", "T-{GUID}")
+    assert persistence.entry_name("run_key", "X-{2918a771-c30a-487f-b976-9487bfe2652c}").endswith("652c}")
+
+
 def test_our_own_background_jobs_are_not_reported_but_look_alikes_are():
     root, conn = _conn()
     app = W("C:", "Users", "u", "AppData", "Local", "Pulse", "backend", "pulsew.exe")

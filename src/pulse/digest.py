@@ -126,6 +126,12 @@ def _new_autostart(conn, a: float, b: float) -> list[str]:
             if base is not None and seen > base + 1 and a <= seen < b]
 
 
+def _short_name(name: str) -> str:
+    """The last part of a task path, at most 40 characters: \\SoftLanding\\S-1-5-21-...\\Task-{GUID} is unreadable in a toast."""
+    leaf = name.rstrip("\\").rsplit("\\", 1)[-1]
+    return leaf if len(leaf) <= 40 else leaf[:39] + "…"
+
+
 def build_week(now: float | None = None) -> dict:
     """{'title', 'body', 'lines', 'this_hours', 'last_hours'}: the last 7 days against the 7 before them.
     A number is left out when either week has no data for it; nothing is guessed."""
@@ -152,7 +158,7 @@ def build_week(now: float | None = None) -> dict:
             if abs(grew_new) >= 1 or abs(grew_old) >= 1:
                 short.append(f"{disk} {grew_new:+.0f} GB ({grew_old:+.0f})")
         new_auto, old_auto = _new_autostart(conn, mid, now), _new_autostart(conn, start, mid)
-    names = ", ".join(new_auto[:3]) + (", ..." if len(new_auto) > 3 else "")
+    names = ", ".join(map(_short_name, new_auto[:3])) + (", ..." if len(new_auto) > 3 else "")
     lines.append(f"New autostart entries: {len(new_auto)} this week" + (f" ({names})" if new_auto else "")
                  + f", {len(old_auto)} last week")
     short.append(f"{len(new_auto)} new autostart ({len(old_auto)})")

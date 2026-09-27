@@ -210,12 +210,16 @@ def is_own_job(kind: str, name: str, command: str, programs: set[str] | None = N
 
 
 _PER_USER_SUFFIX = re.compile(r"_[0-9a-f]{4,8}$", re.IGNORECASE)
+_GUID = re.compile(r"\{[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\}", re.IGNORECASE)
 
 
 def entry_name(kind: str, name: str) -> str:
-    """The name an entry keeps across logons: Windows creates its per-user services anew at every logon with a random
-    suffix (CDPUserSvc_a45ae, then CDPUserSvc_b6638), so for services the suffix is dropped."""
-    return _PER_USER_SUFFIX.sub("", name) if kind == "service" else name
+    """The name an entry keeps when Windows re-creates it: per-user services come back at every logon with a random
+    suffix (CDPUserSvc_a45ae, then CDPUserSvc_b6638), and some tasks with a new GUID in their name
+    (SoftLandingDeferralTask-{2918a771-...}), so the suffix and the GUID are dropped."""
+    if kind == "service":
+        return _PER_USER_SUFFIX.sub("", name)
+    return _GUID.sub("{GUID}", name) if kind == "scheduled_task" else name
 
 
 def last_snapshot(conn) -> float | None:
@@ -240,7 +244,7 @@ def assess(conn, since: float, checker=binaries.check_signatures) -> dict:
     total = {}
     for r in rows:
         total[r[0]] = total.get(r[0], 0) + 1
-    # a per-user service reborn at logon under a new suffix, with the same command, is the same entry, not a new one
+    # an entry Windows re-created under a new suffix or GUID (see entry_name), with the same command, is not a new one
     earliest: dict[tuple, float] = {}
     for kind, name, command, _, first in rows:
         key = (kind, entry_name(kind, name), command)

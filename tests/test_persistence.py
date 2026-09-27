@@ -91,6 +91,35 @@ def test_a_per_user_service_reborn_at_logon_is_not_new_but_a_changed_one_is():
     assert persistence.entry_name("run_key", "Tool_beef") == "Tool_beef"            # only services get the suffix
 
 
+def test_our_own_background_jobs_are_not_reported_but_look_alikes_are():
+    root, conn = _conn()
+    app = W("C:", "Users", "u", "AppData", "Local", "Pulse", "backend", "pulsew.exe")
+    venv = W("C:", "src", "pc-ai-assistant", ".venv", "Scripts", "pythonw.exe")
+    programs = {persistence.os.path.normcase(p) for p in (app, venv)}
+    assert persistence.is_own_job("scheduled_task", W("", "pulse-collect"), app + " collect --interval 30", programs)
+    assert persistence.is_own_job("scheduled_task", W("", "pcassist-digest"), venv + " -m pcassist digest", programs)
+    assert persistence.is_own_job("scheduled_task", W("", "pulse-eval"), venv + " " + W("tests", "eval_tools.py") + " --runs 3 --notify", programs)
+    for name, command in ((W("", "pulse-collect"), W("C:", "Users", "u", "AppData", "Local", "Temp", "pulsew.exe") + " collect"),  # other file
+                          (W("", "pulse-collect"), app + " collect; calc.exe"),                  # other arguments
+                          (W("", "pulse-updater"), app + " collect"),                            # not one of our names
+                          (W("", "Folder", "pulse-collect"), app + " collect")):                 # not in the root folder
+        assert not persistence.is_own_job("scheduled_task", name, command, programs), (name, command)
+    assert not persistence.is_own_job("run_key", W("", "pulse-collect"), app + " collect", programs)
+
+    real = persistence._own_programs
+    persistence._own_programs = lambda: programs
+    try:
+        persistence.snapshot(conn, now=1000.0, reader=lambda: [_item("service", "Known", W("C:", "Windows", "k.exe"))])
+        persistence.snapshot(conn, now=2000.0, reader=lambda: [
+            _item("service", "Known", W("C:", "Windows", "k.exe")),
+            _item("scheduled_task", W("", "pulse-collect"), app + " collect --interval 30"),
+            _item("scheduled_task", W("", "pulse-alerts"), W("C:", "x", "pulsew.exe") + " alerts")])
+        r = persistence.assess(conn, 0)
+    finally:
+        persistence._own_programs = real
+    assert [x["name"] for x in r["new_or_changed"]] == [W("", "pulse-alerts")] and r["own_jobs_not_listed"] == 1
+
+
 def test_an_old_entry_that_already_looks_bad_is_listed_separately():
     root, conn = _conn()
     persistence.snapshot(conn, now=1000.0, reader=lambda: [

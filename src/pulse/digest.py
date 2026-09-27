@@ -112,10 +112,14 @@ def _game_hours(a: float, b: float) -> float:
 
 def _new_autostart(conn, a: float, b: float) -> list[str]:
     """Names first seen in [a, b): an entry that only changed its command (an update) or a per-user service that came
-    back under a new suffix at logon is not new. The first snapshot is the baseline, never new."""
+    back under a new suffix at logon is not new, and this app's own background jobs are left out. The first snapshot
+    is the baseline, never new."""
     base = conn.execute("SELECT MIN(first_seen) FROM autoruns").fetchone()[0]
+    programs = persistence._own_programs()
     first: dict[tuple, float] = {}
-    for kind, name, seen in conn.execute("SELECT kind, name, first_seen FROM autoruns"):
+    for kind, name, command, seen in conn.execute("SELECT kind, name, command, first_seen FROM autoruns"):
+        if persistence.is_own_job(kind, name, command, programs):
+            continue
         key = (kind, persistence.entry_name(kind, name))
         first[key] = min(seen, first.get(key, seen))
     return [name for (_, name), seen in sorted(first.items(), key=lambda kv: kv[1])

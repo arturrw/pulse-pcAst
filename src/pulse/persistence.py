@@ -11,7 +11,9 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
+from pathlib import Path
 
 from . import binaries
 
@@ -177,6 +179,36 @@ def snapshot(conn, now: float | None = None, reader=read_items) -> int:
     return len(items)
 
 
+# The background jobs this app installs itself (scripts/autostart.ps1, under this name or an earlier one). One counts as
+# ours only when name, program AND arguments all match: a look-alike named "pulse-collect" that runs anything else is
+# still reported like any other entry.
+_OWN_TASK = re.compile(r"^\\(pulse|pcassist|vigil)-(collect|alerts|digest|eval)$", re.I)
+_OWN_ARGS = re.compile(r"^(-m (pulse|pcassist|vigil) )?(collect( --interval \d+)?|alerts|digest)$"
+                       r"|^tests\\eval_tools\.py --runs \d+ --notify$", re.I)
+
+
+def _own_programs() -> set[str]:
+    local = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    progs = {Path(local) / app / "backend" / "pulsew.exe" for app in ("Pulse", "Vigil", "pcassist")}
+    progs.add(Path(__file__).resolve().parents[2] / ".venv" / "Scripts" / "pythonw.exe")   # a source checkout
+    if getattr(sys, "frozen", False):
+        progs.add(Path(sys.executable).with_name("pulsew.exe"))
+    return {os.path.normcase(str(p)) for p in progs}
+
+
+def is_own_job(kind: str, name: str, command: str, programs: set[str] | None = None) -> bool:
+    """True for a scheduled task this app installed itself: warning the user about their own recorder is just noise."""
+    if kind != "scheduled_task" or not _OWN_TASK.match(name or ""):
+        return False
+    exe = command_exe(command)
+    if not exe or os.path.normcase(exe) not in (_own_programs() if programs is None else programs):
+        return False
+    cmd = command.strip().lstrip('"')
+    if not os.path.normcase(cmd[:len(exe)]) == os.path.normcase(exe):   # a path spelled through %VARIABLES% is not ours
+        return False
+    return bool(_OWN_ARGS.match(cmd[len(exe):].lstrip('"').strip()))
+
+
 _PER_USER_SUFFIX = re.compile(r"_[0-9a-f]{4,8}$", re.IGNORECASE)
 
 
@@ -214,6 +246,9 @@ def assess(conn, since: float, checker=binaries.check_signatures) -> dict:
         key = (kind, entry_name(kind, name), command)
         earliest[key] = min(first, earliest.get(key, first))
     new_rows = [r for r in rows if r[4] > base + 1 and r[4] >= since and earliest[(r[0], entry_name(r[0], r[1]), r[2])] >= r[4]]
+    programs = _own_programs()
+    own = [r for r in new_rows if is_own_job(r[0], r[1], r[2], programs)]
+    new_rows = [r for r in new_rows if r not in own]
     exes = sorted({e for r in new_rows if (e := command_exe(r[2])) and os.path.exists(e)})
     if exes:
         try:
@@ -253,5 +288,5 @@ def assess(conn, since: float, checker=binaries.check_signatures) -> dict:
     return {"available": True, "baseline_at": time.strftime("%Y-%m-%d %H:%M", time.localtime(base)),
             "entries_known": total, "new_or_changed": new[:MAX_LISTED], "new_or_changed_count": len(new),
             "high": sum(x["severity"] == "high" for x in new),
-            "already_present_but_suspicious": old[:MAX_LISTED],
+            "already_present_but_suspicious": old[:MAX_LISTED], "own_jobs_not_listed": len(own),
             "note": "everything present at the baseline counts as known: only later changes are reported as new"}

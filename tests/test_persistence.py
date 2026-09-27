@@ -77,6 +77,20 @@ def test_a_changed_command_is_reported_with_what_it_replaced_and_a_broken_signat
     assert x["changed_from"] == old_exe and x["severity"] == "high" and "changed after it was signed" in " ".join(x["reasons"])
 
 
+def test_a_per_user_service_reborn_at_logon_is_not_new_but_a_changed_one_is():
+    root, conn = _conn()
+    svchost = W("C:", "WINDOWS", "system32", "svchost.exe") + " -k UnistackSvcGroup"
+    persistence.snapshot(conn, now=1000.0, reader=lambda: [_item("service", "CDPUserSvc_a45ae", svchost),
+                                                           _item("service", "OneSyncSvc_a45ae", svchost)])
+    persistence.snapshot(conn, now=2000.0, reader=lambda: [_item("service", "CDPUserSvc_b6638", svchost),   # next logon
+                                                           _item("service", "OneSyncSvc_b6638", svchost + " -p"),
+                                                           _item("service", "Brand_new", svchost)])
+    r = persistence.assess(conn, 0)
+    assert sorted(x["name"] for x in r["new_or_changed"]) == ["Brand_new", "OneSyncSvc_b6638"] and r["new_or_changed_count"] == 2
+    assert persistence.entry_name("service", "CDPUserSvc_b6638") == "CDPUserSvc"
+    assert persistence.entry_name("run_key", "Tool_beef") == "Tool_beef"            # only services get the suffix
+
+
 def test_an_old_entry_that_already_looks_bad_is_listed_separately():
     root, conn = _conn()
     persistence.snapshot(conn, now=1000.0, reader=lambda: [

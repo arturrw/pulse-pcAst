@@ -208,7 +208,12 @@ def assess(conn, since: float, checker=binaries.check_signatures) -> dict:
     total = {}
     for r in rows:
         total[r[0]] = total.get(r[0], 0) + 1
-    new_rows = [r for r in rows if r[4] > base + 1 and r[4] >= since]
+    # a per-user service reborn at logon under a new suffix, with the same command, is the same entry, not a new one
+    earliest: dict[tuple, float] = {}
+    for kind, name, command, _, first in rows:
+        key = (kind, entry_name(kind, name), command)
+        earliest[key] = min(first, earliest.get(key, first))
+    new_rows = [r for r in rows if r[4] > base + 1 and r[4] >= since and earliest[(r[0], entry_name(r[0], r[1]), r[2])] >= r[4]]
     exes = sorted({e for r in new_rows if (e := command_exe(r[2])) and os.path.exists(e)})
     if exes:
         try:

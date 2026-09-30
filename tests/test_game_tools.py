@@ -82,6 +82,51 @@ def test_benchmark_names_split_into_batch_and_variant():
     assert "batch" not in rows["cs2_20260919_120000"]                      # play sessions are not batches
 
 
+def _tune_dir() -> Path:
+    """_data_dir plus an auto-tune batch: base, msaa2 (much faster), aoLow (the same), fsr4 (faster, already set)."""
+    root = _data_dir()
+    for variant, ft in (("base", 4), ("msaa2", 3), ("aoLow", 4), ("fsr4", 3)):
+        for i in (1, 2):
+            shutil.copy(_write_pm([(30, ft, 2, 3)]), root / "bench" / f"tune0930_{variant}_{i}.csv")
+    return root
+
+
+CURRENT = {"available": True, "cs2_running": False, "settings": {
+    "setting.msaa_samples": {"value": "4", "label": "4x"}, "setting.videocfg_ao_detail": {"value": "2", "label": "medium"},
+    "setting.videocfg_fsr_detail": {"value": "4", "label": "level 4"}}}
+
+
+def test_autotune_result_ranks_steps_and_offers_only_what_the_app_can_still_set():
+    from pulse import cs2settings
+    _tune_dir()
+    real = cs2settings.read_settings
+    cs2settings.read_settings = lambda: CURRENT
+    try:
+        r = tools.cs2_autotune_result()
+    finally:
+        cs2settings.read_settings = real
+    assert r["available"] and r["batch"] == "tune0930" and r["your_settings"]["runs"] == 2
+    steps = {s["step"]: s for s in r["steps"]}
+    assert steps["MSAA 2x"]["verdict"] == "Better" and steps["MSAA 2x"]["avg_fps_change_percent"] > 20
+    assert steps["MSAA 2x"]["setting"] == {"key": "setting.msaa_samples", "value": "2", "from": "4x", "to": "2x"}
+    assert steps["Ambient occlusion low"]["verdict"] == "About the same"
+    assert "setting" not in steps["FSR level 4"]                            # already the current value: nothing to apply
+    assert [s["step"] for s in r["steps"]][-1] == "Ambient occlusion low"   # best gain first
+
+
+def test_autotune_result_without_a_tune_batch_says_so():
+    _data_dir()                                                             # batch "t" is not an auto-tune
+    r = tools.cs2_autotune_result()
+    assert r["available"] is False and "bench_autotune" in r["reason"]
+
+
+def test_a_step_is_offered_only_for_a_single_setting_the_app_changes():
+    assert tools.cs2_step("msaa2", CURRENT)["current_label"] == "4x"
+    assert tools.cs2_step("floor", CURRENT) is None                        # several settings at once
+    assert tools.cs2_step("res1080", CURRENT) is None                      # resolution: not a setting the app changes
+    assert tools.cs2_step("msaa2", {"available": False}) is None
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

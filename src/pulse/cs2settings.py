@@ -19,6 +19,12 @@ except ImportError:  # not on Windows
 SETTINGS = {
     "setting.msaa_samples": {"0": "off", "2": "2x", "4": "4x", "8": "8x"},
     "setting.videocfg_shadow_quality": {"0": "low", "1": "medium", "2": "high"},
+    "setting.videocfg_dynamic_shadows": {"0": "sun only", "1": "all"},
+    "setting.videocfg_ao_detail": {"0": "off", "1": "low", "2": "medium"},
+    "setting.shaderquality": {"0": "low", "1": "high"},
+    "setting.videocfg_texture_detail": {"0": "low", "1": "medium", "2": "high"},
+    # FSR: 0 = off; 1-4 render at a lower resolution, more so at each level (FPS grows with it)
+    "setting.videocfg_fsr_detail": {"0": "off", "1": "level 1", "2": "level 2", "3": "level 3", "4": "level 4"},
 }
 
 BACKUP_NAME_RE = re.compile(r"cs2_video_\d{8}_\d{6}\.txt")

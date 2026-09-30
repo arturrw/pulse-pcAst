@@ -328,6 +328,20 @@ def test_propose_cs2_setting_with_a_bad_value_reports_an_error_and_no_proposed_a
         s.stop()
 
 
+def test_an_auto_tune_batch_offers_apply_only_on_steps_that_helped():
+    from test_game_tools import CURRENT, _tune_dir
+    app = webui.App(_tune_dir() / "metrics.db")
+    real = cs2settings.read_settings
+    cs2settings.read_settings = lambda: CURRENT
+    try:
+        rows = {v["variant"]: v for v in app.game_batch("cs2.exe", "tune0930")["variants"]}
+    finally:
+        cs2settings.read_settings = real
+    assert rows["msaa2"]["apply"]["key"] == "setting.msaa_samples" and rows["msaa2"]["apply"]["value"] == "2"
+    assert "apply" not in rows["aoLow"] and "apply" not in rows["base"]     # no gain / the reference
+    assert "apply" not in rows["fsr4"]                                      # helped, but it is already the current value
+
+
 def test_cs2_apply_and_revert_round_trip_through_the_api():
     tmp = Path(tempfile.mkdtemp()) / "cs2_video.txt"
     original = '"setting.msaa_samples"\t\t"4"\n"setting.videocfg_shadow_quality"\t\t"2"\n'

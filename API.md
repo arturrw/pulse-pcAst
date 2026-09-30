@@ -1,7 +1,7 @@
 # Chat tool API
 
-The local model (`pulse chat` / `pulse ui`) answers only by calling these thirteen read-only
-functions from `src/pulse/tools.py`. Every number in an answer traces back to one of them — see
+The local model (`pulse chat` / `pulse ui`) answers only by calling these fifteen read-only
+functions (plus `propose_cs2_setting`, which only prepares a change for a button click) from `src/pulse/tools.py`. Every number in an answer traces back to one of them — see
 [Scope and safety](README.md#scope-and-safety-of-the-assistant) for what that guarantees. Docstrings
 here are the same text the model reads to decide when and how to call each tool.
 
@@ -54,6 +54,19 @@ of one recording.
 ### `game_sessions_compare(before, after)`
 Differences in avg FPS, lows and p99 frame time between two recordings. Only meaningful for the same
 scene/route; a single run varies.
+
+### `cs2_video_settings()`
+CS2's own current video settings that the app can change (FSR, MSAA, shadows, dynamic shadows, ambient
+occlusion, shaders, textures): value, label and every allowed option.
+
+### `cs2_autotune_result()`
+The latest auto-tune batch (`scriptsench_autotune.ps1`): each setting one step lower than yours, ranked by
+average FPS change, with its verdict (Better / About the same / Worse, noise-aware) and, when the app can apply
+it, the `setting` key and value to pass to `propose_cs2_setting`. `available: false` when none was run.
+
+### `propose_cs2_setting(key, value)`
+Prepares one CS2 setting change and returns what would change; writes nothing. The app shows Apply / Cancel
+buttons, applying keeps a backup and offers Undo.
 
 ## Security-adjacent (never a verdict — see below)
 

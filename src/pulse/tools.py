@@ -395,7 +395,8 @@ def game_sessions_compare(before: str, after: str) -> dict:
 
 
 def cs2_video_settings() -> dict:
-    """CS2's own current video settings that this app knows how to change (MSAA, shadow quality): value, label
+    """CS2's own current video settings that this app knows how to change (FSR, MSAA, shadows, dynamic shadows,
+    ambient occlusion, shaders, textures): value, label
     and every allowed option for each. `available: false` means CS2's settings file was not found (Steam not
     installed, or CS2 was never launched on this account) - say that plainly, do not guess a value."""
     from . import cs2settings
@@ -410,7 +411,8 @@ def propose_cs2_setting(key: str, value: str) -> dict:
     cancel it - never say the setting was already changed.
 
     Args:
-        key: setting.msaa_samples or setting.videocfg_shadow_quality (from cs2_video_settings).
+        key: A setting key from cs2_video_settings (e.g. setting.msaa_samples), or the `setting.key` of an
+            auto-tune step from cs2_autotune_result.
         value: One of that setting's option values (from cs2_video_settings' `options`), e.g. "1" for shadow
             quality medium.
     """
@@ -430,6 +432,70 @@ def propose_cs2_setting(key: str, value: str) -> dict:
             "cs2_running": current["cs2_running"],
             "note": ("CS2 is running: the button will refuse until it is closed, otherwise CS2 overwrites this "
                      "on exit" if current["cs2_running"] else "not applied yet: the user must click the button")}
+
+
+def batch_variant_rows(runs: list[dict]) -> list[dict]:
+    """variant_table of benchmark runs (game_sessions rows of one batch), each row with its plain-words verdict."""
+    from . import explain, games
+
+    groups: dict[str, list[dict]] = {}
+    for r in sorted(runs, key=lambda r: r["name"]):
+        try:
+            groups.setdefault(r["variant"], []).append(run_stats(r["name"]))
+        except (OSError, ValueError):
+            continue                                  # an unreadable run is left out, the others still count
+    rows = games.variant_table(groups)
+    for r in rows:
+        r.update(explain.variant_verdict(r, rows[0]))
+    return rows
+
+
+def cs2_step(variant: str, current: dict) -> dict | None:
+    """The one CS2 setting a benchmark variant changes, as a proposal against `current` (cs2settings.read_settings),
+    or None when the variant changes several settings, one the app does not change, or nothing (already set)."""
+    from . import cs2settings, games
+
+    change = games.variant_settings().get(variant, {})
+    if len(change) != 1 or not current.get("available"):
+        return None
+    (key, value), = change.items()
+    options = cs2settings.SETTINGS.get(key, {})
+    now = current["settings"].get(key, {})
+    if value not in options or now.get("value") in (None, value):
+        return None
+    return {"key": key, "value": value, "label": options[value], "current_value": now["value"],
+            "current_label": now["label"], "cs2_running": current["cs2_running"]}
+
+
+def cs2_autotune_result() -> dict:
+    """The latest CS2 auto-tune (each graphics setting benchmarked one step lower than the user's own settings):
+    for every step, the average and worst-1% FPS change against the user's settings, the verdict (Better / About
+    the same / Worse; a change within the run-to-run noise is "About the same"), and `setting` - the key and value
+    to pass to propose_cs2_setting to take that step, absent when the app cannot apply it or it is already set.
+    `available: false` means no auto-tune was run yet (scripts\\bench_autotune.ps1)."""
+    from . import cs2settings
+
+    runs = [r for r in game_sessions(1000) if "error" not in r and r.get("kind") == "benchmark run" and r.get("game", "").lower() == "cs2.exe"
+            and (r.get("batch") or "").startswith("tune")]
+    if not runs:
+        return {"available": False, "reason": "no auto-tune has been run yet (scripts\\bench_autotune.ps1 runs one)"}
+    batch = max(runs, key=lambda r: r["recorded"])["batch"]
+    runs = [r for r in runs if r["batch"] == batch]
+    rows = batch_variant_rows(runs)
+    if len(rows) < 2:
+        return {"available": False, "reason": f"auto-tune {batch} has no usable runs of both the user's settings and a step"}
+    current = cs2settings.read_settings()
+    steps = []
+    for r in sorted(rows[1:], key=lambda r: r["avg_change"] or 0, reverse=True):
+        s = {"step": r["label"], "avg_fps_change_percent": r["avg_change"], "low1_fps_change_percent": r["low1_change"],
+             "verdict": r["verdict"], "runs": r["runs"]}
+        if (p := cs2_step(r["variant"], current)):
+            s["setting"] = {"key": p["key"], "value": p["value"], "from": p["current_label"], "to": p["label"]}
+        steps.append(s)
+    ref = rows[0]
+    return _round_deep({"available": True, "batch": batch, "recorded": min(r["recorded"] for r in runs),
+                        "your_settings": {"avg_fps": ref["avg_fps"], "low1_fps": ref["low1_fps"], "runs": ref["runs"]},
+                        "steps": steps})
 
 
 def _recording_span(path: Path) -> tuple[float, float] | None:
@@ -655,6 +721,6 @@ def _round_deep(x):
 
 
 TOOLS = [current_status, disk_usage, top_processes, metrics_history, disk_forecast, largest_folders,
-         game_sessions, game_session_report, game_sessions_compare, cs2_video_settings, propose_cs2_setting,
+         game_sessions, game_session_report, game_sessions_compare, cs2_video_settings, cs2_autotune_result, propose_cs2_setting,
          process_watch, system_health, startup_changes, what_happened]
 TOOL_MAP = {f.__name__: f for f in TOOLS}

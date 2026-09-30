@@ -354,16 +354,25 @@ def format_compare(a: dict, b: dict) -> str:
 
 
 @lru_cache(maxsize=1)
-def variant_labels() -> dict[str, str]:
-    """Readable names of the benchmark variants ({"fsr3": "FSR level 3", ...}) from scripts/bench_variants.json, the
-    same file bench_batch.ps1 takes the settings from. A missing or broken file just means the short names are shown."""
+def _variants_file() -> dict:
     from . import paths
 
     try:
         data = json.loads(paths.resource("scripts", "bench_variants.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    return {k: v["label"] for k, v in data.items() if not k.startswith("_") and isinstance(v, dict) and v.get("label")}
+    return {k: v for k, v in data.items() if not k.startswith("_") and isinstance(v, dict)} if isinstance(data, dict) else {}
+
+
+def variant_labels() -> dict[str, str]:
+    """Readable names of the benchmark variants ({"fsr3": "FSR level 3", ...}) from scripts/bench_variants.json, the
+    same file bench_batch.ps1 takes the settings from. A missing or broken file just means the short names are shown."""
+    return {k: v["label"] for k, v in _variants_file().items() if v.get("label")}
+
+
+def variant_settings() -> dict[str, dict[str, str]]:
+    """What each benchmark variant changes in cs2_video.txt ({"msaa2": {"setting.msaa_samples": "2"}, ...})."""
+    return {k: {str(a): str(b) for a, b in v["set"].items()} for k, v in _variants_file().items() if isinstance(v.get("set"), dict)}
 
 
 def variant_table(groups: dict[str, list[dict]], reference: str | None = None) -> list[dict]:

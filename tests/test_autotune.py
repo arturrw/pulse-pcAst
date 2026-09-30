@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-from pulse import autotune, games
+from pulse import autotune, cs2settings, games
 
 VARIANTS = json.loads((Path(__file__).parent.parent / "scripts" / "bench_variants.json").read_text(encoding="utf-8"))
 
@@ -12,6 +12,11 @@ def test_every_step_is_a_variant_that_sets_exactly_that_value():
         for value, variant in ladder[1:]:
             assert variant in VARIANTS, f"{variant} missing from bench_variants.json"
             assert VARIANTS[variant]["set"] == {key: value}, variant
+
+
+def test_every_step_can_be_applied_from_the_app():
+    for key, ladder in autotune.LADDERS.items():
+        assert [v for v, _ in ladder if v not in cs2settings.SETTINGS.get(key, {})] == [], key
 
 
 def test_plan_takes_one_step_down_from_the_current_value():

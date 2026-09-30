@@ -343,7 +343,9 @@ async function overview(out) {
 }
 
 // ---- the one thing the assistant can propose but never do itself: a CS2 video setting change
-const CS2_LABELS = { "setting.msaa_samples": "MSAA", "setting.videocfg_shadow_quality": "Shadow quality" };
+const CS2_LABELS = { "setting.msaa_samples": "MSAA", "setting.videocfg_shadow_quality": "Shadow quality",
+  "setting.videocfg_dynamic_shadows": "Dynamic shadows", "setting.videocfg_ao_detail": "Ambient occlusion",
+  "setting.shaderquality": "Shader quality", "setting.videocfg_texture_detail": "Texture detail", "setting.videocfg_fsr_detail": "FSR" };
 function cs2Card(action) {
   const name = CS2_LABELS[action.key] || action.key;
   const status = h("p", { class: "mute" }, action.cs2_running ? "Close CS2 first: it overwrites this on exit." : "Not applied yet.");
@@ -631,8 +633,10 @@ function gamePage(out, game, recs, d) {
         fill(singles, b.runs.map((r) => row(r).el));
         const copyBtn = h("button", { onclick: () => copyText(d.markdown, copyBtn) }, "Copy as Markdown");
         const picBtn = h("button", { onclick: () => batchPicture(d).toBlob((blob) => blob && saveBlob(blob, "benchmark_" + b.tag + ".png")) }, "Save as picture");
+        const steps = d.variants.filter((v) => v.apply);   // settings that helped and that the app can set for you
         fill(host, h("div", { class: "vrow head" }, h("div", {}, "Variant"), h("div", {}, "Average FPS"), h("div", {}, "Worst 1% FPS"), h("div", {}, "Result")), rows,
           h("p", { class: "mute small" }, d.note),
+          steps.length ? h("div", {}, h("p", { class: "small" }, "These changes helped. Apply one to your CS2 settings (a backup is kept, so Undo brings yours back):"), steps.map((v) => cs2Card(v.apply))) : null,
           h("div", { class: "row" }, h("button", { onclick: () => singles.classList.toggle("open") }, "Show the " + b.runs.length + " single runs"), copyBtn, picBtn), singles);
       } catch (e) { fill(host, err(e)); }
     };

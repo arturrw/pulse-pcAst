@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ack, alerts, autorec, chat, chatstore, cs2settings, db, digest, explain, gamelib, games, lhm, paths, report, settings, setup_tasks, tools
+from . import ack, alerts, autorec, chat, chatstore, cs2settings, db, digest, explain, gamelib, lhm, paths, report, settings, setup_tasks, tools
 from .collectors import LiveSampler, nvidia_present
 from .webui_page import render_page
 
@@ -340,20 +340,16 @@ class App:
                 and r.get("batch") == batch]
         if not runs:
             raise ApiError("no such batch", 404)
-        groups: dict[str, list[dict]] = {}
-        for r in sorted(runs, key=lambda r: r["name"]):
-            try:
-                groups.setdefault(r["variant"], []).append(tools.run_stats(r["name"]))
-            except (OSError, ValueError):
-                continue                                  # an unreadable run is left out, the others still count
-        rows = games.variant_table(groups)
+        rows = tools.batch_variant_rows(runs)
         if not rows:
             raise ApiError("these runs could not be read", 422)
-        ref = rows[0]
-        for r in rows:
-            r.update(explain.variant_verdict(r, ref))
+        if game.lower() == "cs2.exe" and any(r["verdict"] == "Better" for r in rows):
+            current = cs2settings.read_settings()     # a step that helped gets an Apply button (one setting the app changes)
+            for r in rows:
+                if r["verdict"] == "Better" and (step := tools.cs2_step(r["variant"], current)):
+                    r["apply"] = step
         title = f"{tools.game_title(game)} benchmark: {batch}"
-        return {"batch": batch, "title": title, "reference": ref["variant"], "variants": tools._round_deep(rows),
+        return {"batch": batch, "title": title, "reference": rows[0]["variant"], "variants": tools._round_deep(rows),
                 "recorded": min(r["recorded"] for r in runs), "note": explain.BATCH_NOTE,
                 "markdown": explain.batch_markdown(title, rows)}
 

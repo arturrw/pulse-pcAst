@@ -7,12 +7,21 @@ param(
     [int]$From = 1,                                    # first repeat to run: resume an interrupted batch with the same -Tag
     [string]$Tag = (Get-Date -Format "MMdd_HHmm"),
     [string[]]$Only = @("base", "msaa2", "shadowM"),  # variants to run, see bench_variants.json
-    [ValidateSet("benchmark", "bots")][string]$Scene = "benchmark"   # see bench_run.ps1
+    [ValidateSet("benchmark", "bots")][string]$Scene = "benchmark",  # see bench_run.ps1
+    [string]$DataDir = "",                             # see bench_run.ps1
+    [string]$Pulse = ""
 )
 
 $Root = Split-Path $PSScriptRoot -Parent
-$Python = Join-Path $Root ".venv\Scripts\python.exe"
+if (-not $DataDir) { $DataDir = Join-Path $Root "data" }
+$BenchDir = Join-Path $DataDir "bench"
 $Bench = Join-Path $PSScriptRoot "bench_run.ps1"
+# The app asks a running batch to stop by creating this file. It is checked between runs, so the run in progress
+# still finishes and restores the settings (killing the script mid-run would leave the test settings in place).
+$StopFile = Join-Path $BenchDir "batch.stop"
+function Invoke-Pulse {
+    if ($Pulse) { & $Pulse @args } else { & (Join-Path $Root ".venv\Scripts\python.exe") -m pulse @args }
+}
 
 # Variants (settings + the name the app shows) live in bench_variants.json next to this script; add new ones there.
 function Get-BenchVariants([string]$Path) {
@@ -36,14 +45,16 @@ foreach ($v in $Only) {
 
 :outer for ($i = $From; $i -le $Repeats; $i++) {
     foreach ($v in $Variants.Keys) {
+        if (Test-Path $StopFile) { Write-Host "stopped on request"; break outer }
         $name = "${Tag}_${v}_$i"
         Write-Host "`n=== $name ==="
-        & $Bench -Name $name -Set $Variants[$v] -Scene $Scene   # in-process: a hashtable can't be passed to a child powershell -File
-        if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $Root "data\bench\$name.end.txt"))) {
+        # in-process: a hashtable can't be passed to a child powershell -File
+        & $Bench -Name $name -Set $Variants[$v] -Scene $Scene -DataDir $DataDir -Pulse $Pulse
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path (Join-Path $BenchDir "$name.end.txt"))) {
             Write-Host "run $name failed, stopping the batch"; break outer
         }
     }
 }
 
 Write-Host "`n=== Summary ($Tag) ==="
-& $Python -m pulse session summary (Join-Path $Root "data\bench") --tag $Tag --process cs2.exe --slices
+Invoke-Pulse session summary $BenchDir --tag $Tag --process cs2.exe --slices

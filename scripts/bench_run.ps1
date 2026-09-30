@@ -20,13 +20,20 @@ param(
     [int]$Bots = 16,                 # bots scene: how many bots fight
     [int]$WarmupSec = 30,            # bots scene: time for the bots to spread out before measuring
     [int]$MeasureSec = 120,          # bots scene: length of the measured stretch
-    [switch]$KeepSettings
+    [switch]$KeepSettings,
+    [string]$DataDir = "",           # where bench\ goes (default: the checkout's data folder; the app passes its own)
+    [string]$Pulse = ""              # pulse.exe of an installed app (default: the checkout's python -m pulse)
 )
 
 $Root = Split-Path $PSScriptRoot -Parent
-$OutDir = Join-Path $Root "data\bench"
-$PresentMon = Join-Path $env:USERPROFILE "Tools\PresentMon\PresentMon-2.5.1-x64.exe"
-$Python = Join-Path $Root ".venv\Scripts\python.exe"
+if (-not $DataDir) { $DataDir = Join-Path $Root "data" }
+$OutDir = Join-Path $DataDir "bench"
+# the newest PresentMon console program in the tools folder, the same place the app looks
+$PresentMon = Get-ChildItem (Join-Path $env:USERPROFILE "Tools\PresentMon") -Filter "PresentMon*.exe" -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+function Invoke-Pulse {
+    if ($Pulse) { & $Pulse @args } else { & (Join-Path $Root ".venv\Scripts\python.exe") -m pulse @args }
+}
 
 function Set-VideoSettings([string]$Path, [hashtable]$Values) {
     # Replaces the value of each "key" "value" pair; throws if a key is missing (a typo must not go unnoticed).
@@ -102,7 +109,7 @@ if (-not ($isAdmin -or $inLogGroup)) {
     Write-Host '  Add-LocalGroupMember -SID S-1-5-32-559 -Member "$env:USERDOMAIN\$env:USERNAME"'
     exit 1
 }
-if (-not (Test-Path $PresentMon)) { Write-Host "PresentMon not found: $PresentMon"; exit 1 }
+if (-not $PresentMon) { Write-Host "PresentMon not found in $env:USERPROFILE\Tools\PresentMon"; exit 1 }
 if (Get-Process cs2 -ErrorAction SilentlyContinue) { Write-Host "CS2 is running: close it first (its settings would be overwritten on exit)."; exit 1 }
 $p = Get-SteamPaths
 if (-not $p.GameDir -or -not $p.Video) { Write-Host "Could not find the CS2 folder or cs2_video.txt (Steam: $($p.SteamExe))"; exit 1 }
@@ -187,7 +194,7 @@ if ((Test-Path $csv) -and $stopLine -and $startLine) {
     $times | Set-Content (Join-Path $OutDir "$Name.end.txt")
 }
 if (Test-Path $csv) {
-    & $Python -m pulse session report $csv --process cs2.exe
+    Invoke-Pulse session report $csv --process cs2.exe
     # "Composed" present modes mean the game window was not in front (another window had focus): not comparable
     $modes = Import-Csv $csv | Group-Object PresentMode | Sort-Object Count -Descending
     if ($modes -and $modes[0].Name -like "Composed*") {

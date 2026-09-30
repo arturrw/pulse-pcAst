@@ -8,19 +8,32 @@ param(
     [int]$Repeats = 2,
     [int]$From = 1,                                    # resume an interrupted auto-tune with the same -Tag
     [string]$Tag = ("tune" + (Get-Date -Format "MMddHHmm")),
-    [ValidateSet("benchmark", "bots")][string]$Scene = "benchmark"
+    [ValidateSet("benchmark", "bots")][string]$Scene = "benchmark",
+    [string]$DataDir = "",                             # see bench_run.ps1
+    [string]$Pulse = "",
+    [switch]$Log                                       # keep everything printed in <DataDir>\bench\<Tag>.log (the app reads it)
 )
 
 $Root = Split-Path $PSScriptRoot -Parent
-$Python = Join-Path $Root ".venv\Scripts\python.exe"
+if (-not $DataDir) { $DataDir = Join-Path $Root "data" }
+$BenchDir = Join-Path $DataDir "bench"
+New-Item -ItemType Directory -Force $BenchDir | Out-Null
+function Invoke-Pulse {
+    if ($Pulse) { & $Pulse @args } else { & (Join-Path $Root ".venv\Scripts\python.exe") -m pulse @args }
+}
+if ($Log) { Start-Transcript -Path (Join-Path $BenchDir "$Tag.log") -Append | Out-Null }
+try {
+    $steps = Invoke-Pulse session tune-plan
+    if ($LASTEXITCODE -ne 0) { exit 1 }   # the reason is already printed
+    $variants = @("base") + ($steps -split ",")
+    $minutes = $variants.Count * ($Repeats - $From + 1) * $(if ($Scene -eq "bots") { 4 } else { 3 })
+    Write-Host "Auto-tune $Tag : $($variants -join ', ') x $Repeats runs, about $minutes min. Do not use the PC meanwhile."
 
-$steps = & $Python -m pulse session tune-plan
-if ($LASTEXITCODE -ne 0) { exit 1 }   # the reason is already printed
-$variants = @("base") + ($steps -split ",")
-$minutes = $variants.Count * ($Repeats - $From + 1) * $(if ($Scene -eq "bots") { 4 } else { 3 })
-Write-Host "Auto-tune $Tag : $($variants -join ', ') x $Repeats runs, about $minutes min. Do not use the PC meanwhile."
+    & (Join-Path $PSScriptRoot "bench_batch.ps1") -Repeats $Repeats -From $From -Tag $Tag -Only $variants -Scene $Scene -DataDir $DataDir -Pulse $Pulse
 
-& (Join-Path $PSScriptRoot "bench_batch.ps1") -Repeats $Repeats -From $From -Tag $Tag -Only $variants -Scene $Scene
-
-Write-Host "`n=== Auto-tune ($Tag) ==="
-& $Python -m pulse session tune-report (Join-Path $Root "data\bench") --tag $Tag --process cs2.exe
+    Write-Host "`n=== Auto-tune ($Tag) ==="
+    Invoke-Pulse session tune-report $BenchDir --tag $Tag --process cs2.exe | Out-Host
+}
+finally {
+    if ($Log) { Stop-Transcript | Out-Null }
+}

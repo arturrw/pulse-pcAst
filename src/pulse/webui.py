@@ -8,11 +8,13 @@ only, so a hostile process name cannot inject anything. Only a fixed list of act
 forget a finding, ask the assistant, install or remove our own three background jobs, add the user to the Performance
 Log Users group so games can be recorded (Windows asks for confirmation), and - the one setting this app ever writes on
 the user's behalf - apply or revert one CS2 video setting, always from an explicit button click, never from the
-assistant's own tool call. Everything else is read-only.
+assistant's own tool call; and start or stop a CS2 auto-tune (our own benchmark script, which restores the settings
+after every run). Everything else is read-only.
 The server stops when the browser tab has been closed for a few minutes."""
 import json
 import secrets
 import subprocess
+import sys
 import threading
 import time
 import webbrowser
@@ -20,7 +22,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import ack, alerts, autorec, chat, chatstore, cs2settings, db, digest, explain, gamelib, lhm, paths, report, settings, setup_tasks, tools
+import psutil
+
+from . import ack, alerts, autorec, autotune, chat, chatstore, cs2settings, db, digest, explain, gamelib, games, lhm, paths, report, settings, setup_tasks, tools
 from .collectors import LiveSampler, nvidia_present
 from .webui_page import render_page
 
@@ -382,6 +386,67 @@ class App:
         except cs2settings.Cs2Error as e:
             raise ApiError(str(e)) from None
 
+    # ---- CS2 auto-tune: runs our own fixed script (bench_autotune.ps1); only the repeat count and the scene are chosen
+    def _bench_dir(self) -> Path:
+        return self.db_path.parent / "bench"
+
+    def autotune(self) -> dict:
+        """What an auto-tune would try (from the current CS2 settings), and the state of the last one started here."""
+        labels = games.variant_labels()
+        try:
+            plan, plan_error = [labels.get(v, v) for v in autotune.plan_from_game()], None
+        except (OSError, cs2settings.Cs2Error) as e:
+            plan, plan_error = [], str(e)
+        return {"plan": plan, "plan_error": plan_error, "minutes_per_run": autotune.MINUTES_PER_RUN,
+                "presentmon": gamelib.presentmon_exe() is not None, "cs2_running": cs2settings.cs2_running(),
+                **autotune.status(self._bench_dir())}
+
+    def autotune_start(self, repeats, scene) -> dict:
+        if isinstance(repeats, bool) or repeats not in (1, 2, 3) or scene not in autotune.MINUTES_PER_RUN:
+            raise ApiError("repeats must be 1, 2 or 3 and the scene benchmark or bots")
+        bench = self._bench_dir()
+        if autotune.status(bench)["running"]:
+            raise ApiError("an auto-tune is already running", 409)
+        if cs2settings.cs2_running():
+            raise ApiError("CS2 is running: close it first (the test changes its settings file)", 409)
+        if gamelib.presentmon_exe() is None:
+            raise ApiError("PresentMon is not installed. Put PresentMon-...-x64.exe in " + str(gamelib.presentmon_folder()), 409)
+        if not self._cached("perf_group", autorec.in_perf_log_users, 20):
+            raise ApiError("recording needs the Performance Log Users group: turn on automatic recording in Setup first", 409)
+        try:
+            plan = autotune.plan_from_game()
+        except (OSError, cs2settings.Cs2Error) as e:
+            raise ApiError(str(e), 409) from None
+        if not plan:
+            raise ApiError("every setting the auto-tune tries is already at its lowest", 409)
+        script = paths.resource("scripts", "bench_autotune.ps1")
+        if not script.exists():
+            raise ApiError("the auto-tune script was not found", 500)
+        bench.mkdir(parents=True, exist_ok=True)
+        (bench / autotune.STOP_FILE).unlink(missing_ok=True)
+        tag = "tune" + time.strftime("%m%d%H%M")
+        pulse_exe = Path(sys.executable).with_name("pulse.exe") if paths.frozen() else None
+        try:
+            proc = self._launch(autotune.start_command(script, tag, repeats, scene, self.db_path.parent, pulse_exe))
+        except OSError as e:
+            raise ApiError(f"could not start PowerShell: {e}", 500) from None
+        pid = getattr(proc, "pid", None)
+        try:
+            created = psutil.Process(pid).create_time() if pid else 0
+        except psutil.Error:
+            created = 0
+        total = (len(plan) + 1) * repeats
+        (bench / autotune.STATE_FILE).write_text(json.dumps({"tag": tag, "pid": pid, "created": created, "total": total,
+                                                             "started": time.strftime("%Y-%m-%d %H:%M")}), encoding="utf-8")
+        return {"tag": tag, "total": total, "minutes": total * autotune.MINUTES_PER_RUN[scene]}
+
+    def autotune_stop(self) -> dict:
+        """Ask the running auto-tune to stop after the run in progress (which still restores the settings)."""
+        if not autotune.status(self._bench_dir())["running"]:
+            raise ApiError("no auto-tune is running", 409)
+        (self._bench_dir() / autotune.STOP_FILE).write_text("stop", encoding="utf-8")
+        return {"stopping": True}
+
     # ---- the assistant
     def _client(self):
         if self._client_factory:
@@ -671,6 +736,9 @@ class Handler(BaseHTTPRequestHandler):
             ("GET", "cs2_settings"): lambda: app.cs2_settings(),
             ("POST", "cs2_apply"): lambda: app.cs2_apply(body.get("key"), body.get("value")),
             ("POST", "cs2_revert"): lambda: app.cs2_revert(body.get("backup")),
+            ("GET", "autotune"): lambda: app.autotune(),
+            ("POST", "autotune_start"): lambda: app.autotune_start(body.get("repeats"), body.get("scene")),
+            ("POST", "autotune_stop"): lambda: app.autotune_stop(),
             ("GET", "anomalies"): lambda: app.anomalies(q("hours", "24")),
             ("POST", "game_add"): lambda: app.game_add(body.get("process"), body.get("title")),
             ("POST", "game_remove"): lambda: app.game_remove(body.get("process")),

@@ -83,3 +83,50 @@ def report(paths, process: str | None = None, title: str = "Auto-tune") -> str:
     if spots:
         out += ["", spots]
     return "\n".join(out)
+
+
+# ---------------------------------------------------------------- running it from the app
+
+STATE_FILE = "autotune.json"   # in <data>/bench: the auto-tune the app started (tag, runs, process)
+STOP_FILE = "batch.stop"       # bench_batch.ps1 stops before its next run when this file exists
+MINUTES_PER_RUN = {"benchmark": 3, "bots": 4}
+
+
+def start_command(script: Path, tag: str, repeats: int, scene: str, data_dir: Path, pulse_exe: Path | None) -> list[str]:
+    """The fixed PowerShell command line that runs scripts/bench_autotune.ps1; every value is checked by the caller."""
+    cmd = ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(script),
+           "-Repeats", str(repeats), "-Scene", scene, "-Tag", tag, "-DataDir", str(data_dir), "-Log"]
+    return cmd + (["-Pulse", str(pulse_exe)] if pulse_exe else [])
+
+
+def _alive(state: dict) -> bool:
+    import psutil
+
+    try:
+        p = psutil.Process(int(state.get("pid", 0)))
+        return abs(p.create_time() - float(state.get("created", 0))) < 2    # not a later process that got the same id
+    except (psutil.Error, ValueError, TypeError):
+        return False
+
+
+def status(bench_dir: Path) -> dict:
+    """The last auto-tune started from the app: running or not, runs done out of how many, the end of its log."""
+    import json
+
+    try:
+        state = json.loads((bench_dir / STATE_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"running": False}
+    tag = str(state.get("tag", ""))
+    if not tag.startswith("tune") or not tag[4:].isdigit():
+        return {"running": False}
+    log = []
+    try:
+        raw = (bench_dir / f"{tag}.log").read_bytes()
+        text = raw.decode("utf-16") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("utf-8-sig", "replace")
+        log = [ln for ln in text.splitlines() if ln.strip() and not ln.startswith("*")][-12:]   # no transcript header
+    except OSError:
+        pass
+    return {"running": _alive(state), "tag": tag, "total": state.get("total"), "started": state.get("started"),
+            "done": len(list(bench_dir.glob(f"{tag}_*.end.txt"))), "stop_requested": (bench_dir / STOP_FILE).exists(),
+            "log": log}

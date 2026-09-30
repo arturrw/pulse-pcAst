@@ -103,6 +103,8 @@ async function check(theme, width) {
     await s.waitFor("document.querySelectorAll('.progs button').length > 0", "the list of running programs");
     await s.evalJs("document.querySelector('.gamecard').click()");
     await s.waitFor("document.querySelector('.verdict')", "the latest recording");
+    // CS2's page offers an auto-tune: what it would try (or why it cannot), never started by just opening the page
+    await s.waitFor("[...document.querySelectorAll('#view h2')].some((e) => e.textContent === 'Auto-tune') && /Lowers each graphics setting/.test(document.querySelector('#view').textContent)", "the auto-tune card");
     await s.evalJs("[...document.querySelectorAll('.item.col .head')].find((h) => /variants? ·/.test(h.textContent)).click()");
     await s.waitFor("document.querySelectorAll('.vrow:not(.head)').length >= 2", "the batch table");
     const headHidden = await s.evalJs("getComputedStyle(document.querySelector('.vrow.head')).display === 'none'");

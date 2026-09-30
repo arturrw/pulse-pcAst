@@ -342,6 +342,70 @@ def test_an_auto_tune_batch_offers_apply_only_on_steps_that_helped():
     assert "apply" not in rows["fsr4"]                                      # helped, but it is already the current value
 
 
+def test_auto_tune_starts_only_our_script_reports_progress_and_stops_between_runs():
+    import os
+    from pulse import autorec, autotune, gamelib
+    root = Path(tempfile.mkdtemp())
+    launched = []
+
+    class Proc:
+        pid = os.getpid()                                                   # a live process: the auto-tune counts as running
+
+    app = webui.App(root / "metrics.db", launcher=lambda cmd: launched.append(cmd) or Proc())
+    saved = (gamelib.presentmon_exe, cs2settings.cs2_running, autorec.in_perf_log_users, autotune.plan_from_game)
+    gamelib.presentmon_exe = lambda: Path("PresentMon.exe")
+    cs2settings.cs2_running = lambda: False
+    autorec.in_perf_log_users = lambda: True
+    autotune.plan_from_game = lambda: ["msaa2", "shadowM"]
+    try:
+        for bad in ((0, "benchmark"), (4, "benchmark"), (True, "benchmark"), ("2", "benchmark"), (2, "de_dust2"), (2, "; calc")):
+            try:
+                app.autotune_start(*bad)
+            except webui.ApiError as e:
+                assert e.code == 400, bad
+            else:
+                raise AssertionError(bad)
+        assert launched == []
+        cs2settings.cs2_running = lambda: True
+        try:
+            app.autotune_start(2, "benchmark")
+            raise AssertionError("started while CS2 runs")
+        except webui.ApiError as e:
+            assert e.code == 409 and "CS2" in str(e)
+        cs2settings.cs2_running = lambda: False
+
+        r = app.autotune_start(2, "bots")
+        assert r["total"] == 6 and r["minutes"] == 24 and r["tag"].startswith("tune")
+        cmd = launched[0]
+        assert cmd[:7] == ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", str(webui.paths.resource("scripts", "bench_autotune.ps1"))]
+        assert cmd[7:] == ["-Repeats", "2", "-Scene", "bots", "-Tag", r["tag"], "-DataDir", str(root), "-Log"]
+        st = app.autotune()
+        assert st["running"] and st["total"] == 6 and st["done"] == 0 and st["plan"] == ["MSAA 2x", "Shadows Medium"]
+        (root / "bench" / f"{r['tag']}_base_1.end.txt").write_text("x", encoding="utf-8")
+        (root / "bench" / f"{r['tag']}.log").write_text("**********\nTranscript started\n**********\n=== run ===\n", encoding="utf-8")
+        st = app.autotune()
+        assert st["done"] == 1 and st["log"] == ["Transcript started", "=== run ==="]
+        try:
+            app.autotune_start(2, "benchmark")
+            raise AssertionError("a second auto-tune started")
+        except webui.ApiError as e:
+            assert e.code == 409
+        assert app.autotune_stop() == {"stopping": True} and app.autotune()["stop_requested"]
+        assert (root / "bench" / "batch.stop").exists()                    # bench_batch.ps1 stops before its next run
+
+        state = json.loads((root / "bench" / "autotune.json").read_text(encoding="utf-8"))
+        state["created"] = 1.0                                              # the process id now belongs to another program
+        (root / "bench" / "autotune.json").write_text(json.dumps(state), encoding="utf-8")
+        assert app.autotune()["running"] is False
+        try:
+            app.autotune_stop()
+            raise AssertionError("stopped nothing")
+        except webui.ApiError as e:
+            assert e.code == 409
+    finally:
+        gamelib.presentmon_exe, cs2settings.cs2_running, autorec.in_perf_log_users, autotune.plan_from_game = saved
+
+
 def test_cs2_apply_and_revert_round_trip_through_the_api():
     tmp = Path(tempfile.mkdtemp()) / "cs2_video.txt"
     original = '"setting.msaa_samples"\t\t"4"\n"setting.videocfg_shadow_quality"\t\t"2"\n'

@@ -582,6 +582,44 @@ function library(out, d) {
       h("div", { class: "mute" }, [g.sessions ? plural(g.sessions, "play session", "play sessions") : null, g.runs ? plural(g.runs, "benchmark run", "benchmark runs") : null].filter(Boolean).join(" · ") || "No recordings yet"),
       h("div", { class: "mute small" }, g.last ? "Last recorded " + g.last : "Open it to record a session")))) : h("p", { class: "mute" }, "No games yet. Add the first one above."));
 }
+// CS2 auto-tune: start our own benchmark script, then follow it (runs done, the end of its log) until it finishes.
+function autotuneCard() {
+  const box = h("div", { class: "card" }); let shown = false;
+  const draw = async () => {
+    if (shown && !box.isConnected) return;               // the page was left: stop following
+    shown = true;
+    let d; try { d = await api("autotune"); } catch (e) { fill(box, err(e)); return; }
+    const log = d.log && d.log.length ? h("pre", { class: "mute small" }, d.log.join("\n")) : null;
+    if (d.running) {
+      const stop = h("button", {}, d.stop_requested ? "Stopping after this run…" : "Stop after this run"); stop.disabled = !!d.stop_requested;
+      stop.addEventListener("click", async () => { stop.disabled = true; try { await api("autotune_stop", {}); draw(); } catch (e) { box.append(err(e)); } });
+      fill(box, h("h3", {}, "Auto-tune running: run " + Math.min(d.done + 1, d.total) + " of " + d.total),
+        h("p", {}, "Do not use the PC until it finishes: CS2 opens and closes by itself, and an unfocused game is not measured fairly."),
+        h("div", { class: "row" }, stop), log);
+      setTimeout(draw, 10000); return;
+    }
+    const reps = h("select", {}, [1, 2, 3].map((n) => h("option", { value: String(n) }, plural(n, "run", "runs") + " of each"))); reps.value = "2";
+    const scene = h("select", {}, h("option", { value: "benchmark" }, "Benchmark map"), h("option", { value: "bots" }, "Bots deathmatch"));
+    const est = h("span", { class: "mute small" });
+    const upd = () => { const n = (d.plan.length + 1) * Number(reps.value); est.textContent = n + " runs, about " + n * d.minutes_per_run[scene.value] + " min"; };
+    reps.addEventListener("change", upd); scene.addEventListener("change", upd); upd();
+    const start = h("button", { class: "primary" }, "Start auto-tune");
+    start.addEventListener("click", async () => { start.disabled = true;
+      try { await api("autotune_start", { repeats: Number(reps.value), scene: scene.value }); draw(); } catch (e) { box.append(err(e)); start.disabled = false; } });
+    const unfinished = d.tag && d.done < d.total;
+    fill(box, h("p", {}, "Lowers each graphics setting one step from yours and measures what that gains. Your settings are restored after every run; nothing is applied."),
+      d.plan_error ? h("p", { class: "mute" }, d.plan_error)
+        : d.plan.length ? h("p", { class: "small" }, "Will try: " + d.plan.join(", ") + ".") : h("p", { class: "mute" }, "Every setting it tries is already at its lowest."),
+      d.presentmon ? null : h("p", { class: "mute small" }, "Needs PresentMon: press “Record a session” to see where to get it."),
+      d.cs2_running ? h("p", { class: "mute small" }, "Close CS2 first.") : null,
+      d.plan.length ? h("div", { class: "row" }, reps, scene, start, est) : null,
+      d.tag ? h("p", { class: "mute small" }, "Last auto-tune " + d.tag + ": " + d.done + " of " + d.total + " runs" +
+        (unfinished ? " (stopped or failed)." : ". Its results are under Benchmark tests (press Refresh).")) : null,
+      unfinished ? log : null);
+  };
+  draw(); return box;
+}
+
 function gamePage(out, game, recs, d) {
   const numbers = (r) => h("div", { class: "grid" }, r.numbers.map((n) => h("div", { class: "card" }, h("h3", {}, n.label), h("div", { class: "big" }, String(n.value)), h("div", { class: "mute small" }, n.hint))));
   async function openRec(rec, host) {
@@ -664,6 +702,7 @@ function gamePage(out, game, recs, d) {
     h("p", { class: "mute" }, recs.length ? [plural(recs.length, "recording", "recordings"), "last one " + recs[0].recorded].join(" · ") : "No recordings yet"),
     h("div", { class: "row" }, record, remove, refresh),
     h("p", { class: "mute small" }, "Finished a session? Press “Refresh” to check for the new recording."), recMsg,
+    game.id.toLowerCase() === "cs2.exe" ? h("section", {}, h("h2", {}, "Auto-tune"), autotuneCard()) : null,
     recs.length ? [
       h("section", {}, h("h2", {}, "Latest recording"), h("p", { class: "mute small" }, recs[0].name), latest),
       batchSection(),

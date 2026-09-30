@@ -66,6 +66,17 @@ def test_report_without_steps_says_so():
         games.batch_rows = real
 
 
+def test_the_worst_1_percent_is_judged_against_its_own_spread():
+    from pulse import explain
+    # the real auto-tune of 2026-09-30: the average barely moves, the worst 1% of the reference jumps 131 -> 142
+    ref_runs = [{"avg_fps": 323, "low1_fps": 131, "low01_fps": 90, "p99_ms": 6}, {"avg_fps": 324, "low1_fps": 142, "low01_fps": 100, "p99_ms": 6}]
+    step = [{"avg_fps": 333, "low1_fps": 145, "low01_fps": 100, "p99_ms": 6}, {"avg_fps": 333, "low1_fps": 145, "low01_fps": 100, "p99_ms": 6}]
+    rows = games.variant_table({"base": ref_runs, "x": step})
+    assert explain.variant_verdict(rows[1], rows[0])["verdict"] == "About the same"
+    steady = games.variant_table({"base": [dict(ref_runs[0], low1_fps=136)] * 2, "x": step})   # same numbers, steady lows
+    assert explain.variant_verdict(steady[1], steady[0])["verdict"] == "Better"
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

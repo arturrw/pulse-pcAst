@@ -190,12 +190,16 @@ def variant_verdict(row: dict, ref: dict) -> dict:
     avg, low = row["avg_change"], row["low1_change"]
     if avg is None or low is None:
         return {"verdict": "No comparison", "tone": "mute", "text": "Not enough data."}
-    noise = max(5.0, 100 * max(row["spread"], ref["spread"]) / ref["avg_fps"]) if ref["avg_fps"] else 5.0
+    # each number against its own run-to-run spread: the worst 1% jumps much more between repeats than the average
+    floor = lambda spread, base: max(5.0, 100 * spread / base) if base else 5.0
+    noise = floor(max(row["spread"], ref["spread"]), ref["avg_fps"])
+    low_noise = floor(max(row.get("low1_spread", 0), ref.get("low1_spread", 0)), ref.get("low1_fps", 0))
     text = f"Average FPS {avg:+.0f}%, worst 1% {low:+.0f}%."
     if row["runs"] < 2 or ref["runs"] < 2:
         text += " Only one run: it could be just chance."
-    if abs(avg) < noise and abs(low) < noise:
-        return {"verdict": "About the same", "tone": "mute", "text": text + f" Within the run-to-run noise (about {noise:.0f}%)."}
+    if abs(avg) < noise and abs(low) < low_noise:
+        span = f"about {noise:.0f}%" if round(noise) == round(low_noise) else f"about {noise:.0f}% for the average, {low_noise:.0f}% for the worst 1%"
+        return {"verdict": "About the same", "tone": "mute", "text": text + f" Within the run-to-run noise ({span})."}
     better = avg + low > 0
     return {"verdict": "Better" if better else "Worse", "tone": "ok" if better else "bad", "text": text}
 

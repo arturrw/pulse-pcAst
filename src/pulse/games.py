@@ -385,8 +385,9 @@ def variant_table(groups: dict[str, list[dict]], reference: str | None = None) -
     mean = lambda fs, k: sum(f[k] for f in fs) / len(fs)
     rows = {}
     for v, fs in groups.items():
-        avg = [f["avg_fps"] for f in fs]
+        avg, low = [f["avg_fps"] for f in fs], [f["low1_fps"] for f in fs]
         rows[v] = {"variant": v, "label": variant_labels().get(v, v), "runs": len(fs), "avg_fps": mean(fs, "avg_fps"), "spread": max(avg) - min(avg),
+                   "low1_spread": max(low) - min(low),
                    "low1_fps": mean(fs, "low1_fps"), "low01_fps": mean(fs, "low01_fps"), "p99_ms": mean(fs, "p99_ms")}
     base = rows[ref]
     pct = lambda a, b: 100 * (a / b - 1) if b else None

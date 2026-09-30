@@ -457,6 +457,8 @@ def autotune_answer(answer, results):
         return None
     if not r.get("available"):
         return None if re.search(r"auto-?tune|автотюн|автонастро|bench_autotune", answer, re.I) else "does not say that no auto-tune was run yet"
+    if str(round(r["your_settings"]["avg_fps"])) not in answer:
+        return f"does not give the current average FPS ({round(r['your_settings']['avg_fps'])})"
     better = [s for s in r["steps"] if s["verdict"] == "Better"]
     if better and str(abs(round(better[0]["avg_fps_change_percent"]))) not in answer:
         return f"does not give the FPS gain of the best step ({better[0]['step']})"

@@ -481,14 +481,41 @@ def cs2_step(variant: str, current: dict) -> dict | None:
             "current_label": now["label"], "cs2_running": current["cs2_running"]}
 
 
+def _autotune_advice(ref: dict, steps: list[dict], slow_spots: str | None) -> str:
+    """The auto-tune's conclusion in plain words, with the numbers a person cares about: the FPS now, what the best
+    step gained in percent and in frames, and what that means."""
+    fps = lambda pct: ref["avg_fps"] * pct / 100
+    out = [f"With your settings CS2 runs at {ref['avg_fps']:.0f} FPS on average and {ref['low1_fps']:.0f} FPS in its "
+           "slowest 1% of moments."]
+    better = [s for s in steps if s["verdict"] == "Better"]
+    if better:
+        for s in better:
+            gain = s["avg_fps_change_percent"]
+            out.append(f"{s['step']} is worth it: {gain:+.0f}% (about {fps(gain):+.0f} FPS)"
+                       + ("." if "setting" in s else ", but it is already set or not something this app changes."))
+        if len(better) < len(steps):
+            out.append("The other steps made no difference you could notice, so those settings can stay as they are.")
+    else:
+        top = steps[0] if steps else None
+        if top and (top["avg_fps_change_percent"] or 0) > 0:
+            gain = top["avg_fps_change_percent"]
+            out.append(f"Even the biggest step, {top['step']}, gained only {gain:+.0f}% (about {fps(gain):+.0f} FPS): "
+                       "too small to count as a real difference, and not something you would notice while playing.")
+        out.append("So there is nothing worth lowering: your settings are already a good balance of picture and speed.")
+    if slow_spots and slow_spots.startswith("The slowest 1% of frames come back at the same places"):
+        out.append("The dips in the slowest 1% happen at the same heavy spots of the map every time, so no graphics "
+                   "setting removes them.")
+    return " ".join(out)
+
+
 def cs2_autotune_result() -> dict:
     """The latest CS2 auto-tune (each graphics setting benchmarked one step lower than the user's own settings):
     for every step, the average and worst-1% FPS change against the user's settings, the verdict (Better / About
     the same / Worse; a change within the run-to-run noise is "About the same"), and, only for a step that is
-    "Better", `setting` - the key and value to pass to propose_cs2_setting. `recommendation` is the conclusion to
-    give the user: follow it.
-    `slowest_frames` says whether the worst 1% of frames come back at the same places of the route in every run
-    (the scene itself) or land at random (something else on the PC). `available: false` means no auto-tune was run yet (scripts\\bench_autotune.ps1)."""
+    "Better", `setting` - the key and value to pass to propose_cs2_setting. `recommendation` is the conclusion in
+    plain words, with the numbers: tell it in the user's language, in your own words, keeping its numbers. Never
+    suggest lowering a step that is not "Better", and propose only a "Better" step's `setting`.
+    `available: false` means no auto-tune was run yet (scripts\\bench_autotune.ps1)."""
     from . import cs2settings
 
     runs = [r for r in game_sessions(1000) if "error" not in r and r.get("kind") == "benchmark run" and r.get("game", "").lower() == "cs2.exe"
@@ -508,20 +535,11 @@ def cs2_autotune_result() -> dict:
         if r["verdict"] == "Better" and (p := cs2_step(r["variant"], current)):   # only a step that helped can be proposed
             s["setting"] = {"key": p["key"], "value": p["value"], "from": p["current_label"], "to": p["label"]}
         steps.append(s)
-    better = [s for s in steps if s["verdict"] == "Better"]
-    if not better:
-        advice = ("Nothing is worth lowering: every step gained less than the run-to-run noise, so the current settings "
-                  "are already a good balance. Say so; do not suggest lowering any setting and do not propose one.")
-    else:
-        advice = "Worth lowering: " + ", ".join(
-            f"{s['step']} ({s['avg_fps_change_percent']:+.0f}% average FPS" + ("" if "setting" in s else "; already set, or not a setting the app changes")
-            + ")" for s in better) + "."
-        if any("setting" in s for s in better):
-            advice += " To offer one, propose_cs2_setting with its `setting`."
     ref = rows[0]
+    advice = _autotune_advice(ref, steps, batch_slow_spots(runs))
     return _round_deep({"available": True, "batch": batch, "recorded": min(r["recorded"] for r in runs), "recommendation": advice,
                         "your_settings": {"avg_fps": ref["avg_fps"], "low1_fps": ref["low1_fps"], "runs": ref["runs"]},
-                        "steps": steps, "slowest_frames": batch_slow_spots(runs)})
+                        "steps": steps})
 
 
 def _recording_span(path: Path) -> tuple[float, float] | None:

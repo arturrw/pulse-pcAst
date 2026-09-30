@@ -434,8 +434,9 @@ def cs2_settings_answer(answer, results):
         return None
     if not r.get("available"):
         return None if NOT_TRACKED.search(answer) or "cs2" in answer.lower() else "CS2 settings unavailable but the answer does not say so"
-    for s in r["settings"].values():
-        if s["label"] and s["label"] not in answer and str(s["value"]) not in answer:
+    for key in ("setting.msaa_samples", "setting.videocfg_shadow_quality"):   # the two the question asks about
+        s = r["settings"].get(key) or {}
+        if s.get("label") and s["label"] not in answer and str(s["value"]) not in answer:
             return f"setting value/label {s['label']!r} not in answer"
     return None
 
@@ -459,7 +460,18 @@ def autotune_answer(answer, results):
     better = [s for s in r["steps"] if s["verdict"] == "Better"]
     if better and str(abs(round(better[0]["avg_fps_change_percent"]))) not in answer:
         return f"does not give the FPS gain of the best step ({better[0]['step']})"
+    if not better:
+        if results.get("propose_cs2_setting"):
+            return "proposed a setting change although no auto-tune step gained anything beyond the noise"
+        if not NOTHING_TO_LOWER.search(answer):
+            return "does not say that the current settings are already balanced (no step helped)"
+        if re.search(r"рассмотр|можно (?:снизить|понизить)|you (?:could|can|may) (?:lower|reduce)|consider", answer, re.I):
+            return "still suggests lowering settings although no step gained anything beyond the noise"
     return None
+
+
+NOTHING_TO_LOWER = re.compile(r"ни одн|ничего|не (?:стоит|нужно|имеет смысла|требует)|сбаланс|оставить|оставьте|"
+                              r"nothing|no (?:step|setting)|none of|already (?:a good )?balanc|keep", re.I)
 
 
 def cs2_proposal_answer(answer, results):

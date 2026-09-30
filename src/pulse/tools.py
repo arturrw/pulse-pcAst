@@ -484,8 +484,9 @@ def cs2_step(variant: str, current: dict) -> dict | None:
 def cs2_autotune_result() -> dict:
     """The latest CS2 auto-tune (each graphics setting benchmarked one step lower than the user's own settings):
     for every step, the average and worst-1% FPS change against the user's settings, the verdict (Better / About
-    the same / Worse; a change within the run-to-run noise is "About the same"), and `setting` - the key and value
-    to pass to propose_cs2_setting to take that step, absent when the app cannot apply it or it is already set.
+    the same / Worse; a change within the run-to-run noise is "About the same"), and, only for a step that is
+    "Better", `setting` - the key and value to pass to propose_cs2_setting. `recommendation` is the conclusion to
+    give the user: follow it.
     `slowest_frames` says whether the worst 1% of frames come back at the same places of the route in every run
     (the scene itself) or land at random (something else on the PC). `available: false` means no auto-tune was run yet (scripts\\bench_autotune.ps1)."""
     from . import cs2settings
@@ -504,11 +505,21 @@ def cs2_autotune_result() -> dict:
     for r in sorted(rows[1:], key=lambda r: r["avg_change"] or 0, reverse=True):
         s = {"step": r["label"], "avg_fps_change_percent": r["avg_change"], "low1_fps_change_percent": r["low1_change"],
              "verdict": r["verdict"], "runs": r["runs"]}
-        if (p := cs2_step(r["variant"], current)):
+        if r["verdict"] == "Better" and (p := cs2_step(r["variant"], current)):   # only a step that helped can be proposed
             s["setting"] = {"key": p["key"], "value": p["value"], "from": p["current_label"], "to": p["label"]}
         steps.append(s)
+    better = [s for s in steps if s["verdict"] == "Better"]
+    if not better:
+        advice = ("Nothing is worth lowering: every step gained less than the run-to-run noise, so the current settings "
+                  "are already a good balance. Say so; do not suggest lowering any setting and do not propose one.")
+    else:
+        advice = "Worth lowering: " + ", ".join(
+            f"{s['step']} ({s['avg_fps_change_percent']:+.0f}% average FPS" + ("" if "setting" in s else "; already set, or not a setting the app changes")
+            + ")" for s in better) + "."
+        if any("setting" in s for s in better):
+            advice += " To offer one, propose_cs2_setting with its `setting`."
     ref = rows[0]
-    return _round_deep({"available": True, "batch": batch, "recorded": min(r["recorded"] for r in runs),
+    return _round_deep({"available": True, "batch": batch, "recorded": min(r["recorded"] for r in runs), "recommendation": advice,
                         "your_settings": {"avg_fps": ref["avg_fps"], "low1_fps": ref["low1_fps"], "runs": ref["runs"]},
                         "steps": steps, "slowest_frames": batch_slow_spots(runs)})
 

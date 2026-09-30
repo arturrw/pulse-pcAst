@@ -109,7 +109,9 @@ def test_autotune_result_ranks_steps_and_offers_only_what_the_app_can_still_set(
     steps = {s["step"]: s for s in r["steps"]}
     assert steps["MSAA 2x"]["verdict"] == "Better" and steps["MSAA 2x"]["avg_fps_change_percent"] > 20
     assert steps["MSAA 2x"]["setting"] == {"key": "setting.msaa_samples", "value": "2", "from": "4x", "to": "2x"}
-    assert steps["Ambient occlusion low"]["verdict"] == "About the same"
+    assert steps["Ambient occlusion low"]["verdict"] == "About the same" and "setting" not in steps["Ambient occlusion low"]
+    assert "MSAA 2x (+" in r["recommendation"] and "propose_cs2_setting" in r["recommendation"]
+    assert "FSR level 4 (+33% average FPS; already set" in r["recommendation"]
     assert "setting" not in steps["FSR level 4"]                            # already the current value: nothing to apply
     assert [s["step"] for s in r["steps"]][-1] == "Ambient occlusion low"   # best gain first
 

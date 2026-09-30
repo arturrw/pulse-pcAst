@@ -119,6 +119,20 @@ def cmd_session(args: argparse.Namespace) -> None:
             print(explain.batch_markdown(f"Benchmark {args.tag}", rows) if rows else "no usable runs")
         else:
             print(games.summarize_runs(paths, args.process, args.slices))
+    elif args.session_cmd == "tune-plan":
+        from . import autotune, cs2settings
+
+        try:
+            steps = autotune.plan_from_game()
+        except (OSError, cs2settings.Cs2Error) as e:
+            raise SystemExit(str(e))
+        if not steps:
+            raise SystemExit("every tuned setting is already at its lowest: nothing to try")
+        print(",".join(steps))
+    elif args.session_cmd == "tune-report":
+        from . import autotune
+
+        print(autotune.report(sorted(Path(args.folder).glob(f"{args.tag}_*.csv")), args.process, f"Auto-tune {args.tag}"))
     else:
         a = _analyze(args.before, args.hml_before, args)
         b = _analyze(args.after, args.hml_after, args)
@@ -269,6 +283,11 @@ def main(argv: list[str] | None = None) -> int:
     sm.add_argument("--process", default=None)
     sm.add_argument("--slices", action="store_true", help="also FPS per 10 s of the route, per variant")
     sm.add_argument("--markdown", action="store_true", help="print the comparison as a Markdown table to paste anywhere")
+    se_sub.add_parser("tune-plan", help="CS2 settings to try one step lower, from your current cs2_video.txt")
+    tr = se_sub.add_parser("tune-report", help="an auto-tune batch ranked by FPS gain, with what is worth lowering")
+    tr.add_argument("folder")
+    tr.add_argument("--tag", required=True)
+    tr.add_argument("--process", default=None)
     for p_ in (rep, cmp_):
         p_.add_argument("--process", default=None, help="only frames of this exe, e.g. cs2.exe")
         p_.add_argument("--pm-offset-hours", type=float, default=None,

@@ -262,6 +262,13 @@ Findings on 1440p, all-max as `base` (264 avg FPS, 1% low 92):
   comparable, and the script prints a warning. First run (RTX 3070 Ti, 1440p, own settings): 321 FPS,
   1% low 119, CPU 1.8 ms vs GPU 2.8 ms per frame — even with 16 bots the graphics card is the limit.
 
+- **Auto-tune** (`powershell -File scriptsench_autotune.ps1 [-Repeats 2] [-Scene bots]`): reads your
+  current `cs2_video.txt`, lowers each setting one step (FSR, MSAA, shadows, dynamic shadows, AO, shaders,
+  textures), benchmarks every step against your own settings and ranks them: what is worth lowering,
+  and what gains nothing beyond the noise and can stay high. Nothing is applied; your settings are
+  restored after every run. About 3 min per run (8 variants x 2 runs ≈ 50 min); do not use the PC meanwhile.
+  `pulse session tune-plan` shows the steps without running anything.
+
 ## Chat tools
 The model answers only by calling read-only tools — full reference: **[API.md](API.md)**.
 

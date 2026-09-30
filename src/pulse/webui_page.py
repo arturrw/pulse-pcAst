@@ -75,7 +75,7 @@ code{background:var(--chip);padding:1px 6px;border-radius:5px;overflow-wrap:anyw
 .grid.live{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));margin-top:8px}.card.live .big{font-variant-numeric:tabular-nums}
 .spark{display:block;width:100%;margin-top:6px;overflow:visible}.spark .sl{stroke:var(--mute);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
 .spark .sd{fill:var(--acc);stroke:var(--card);stroke-width:2}.spark .sx{stroke:var(--line);stroke-width:1}
-.upd{display:none;align-items:center;gap:12px;padding:8px 20px;background:var(--chip);border-bottom:1px solid var(--line)}.upd.show{display:flex;animation:drop .28s ease both}.upd .grow{flex:1}
+.upd{display:none;align-items:center;gap:12px;padding:8px 20px;background:var(--chip);border-bottom:1px solid var(--line)}.upd.show{display:flex;animation:drop .28s ease both}.upd .grow{flex:1}.upd{flex-wrap:wrap}.upd .notes{flex-basis:100%;margin:0 0 4px;padding-left:20px;display:none}.upd .notes.open{display:block}
 .verdict{font-size:22px;font-weight:700;margin:4px 0}.verdict.ok{color:var(--ok)}.verdict.warn{color:var(--warn)}.verdict.bad{color:var(--bad)}
 @keyframes rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 @keyframes drop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
@@ -825,7 +825,11 @@ async function checkUpdate() {
     try { await shell.invoke("install_update"); } catch (e) { text.textContent = "The update failed: " + (e && e.message || e); go.disabled = false; later.disabled = false; }
   } }, "Update now");
   const text = h("span", { class: "grow" }, "Pulse " + u.version + " is available.");
-  box.replaceChildren(text, go, later); box.classList.add("show");
+  // the release notes (CHANGELOG.md): "- " items, wrapped lines indented under their item
+  const items = (u.notes || "").split(/\n(?=- )/).map((x) => x.replace(/^- /, "").replace(/\s+/g, " ").trim()).filter(Boolean);
+  const notes = h("ul", { class: "notes small" }, items.map((x) => h("li", {}, x)));
+  const whatsNew = items.length ? h("button", { onclick: () => { whatsNew.textContent = notes.classList.toggle("open") ? "Hide" : "What's new"; } }, "What's new") : null;
+  box.replaceChildren(...[text, whatsNew, go, later, notes].filter(Boolean)); box.classList.add("show");
 }
 checkUpdate(); setInterval(checkUpdate, 6 * 3600 * 1000);
 

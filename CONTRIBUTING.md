@@ -73,6 +73,16 @@ behind it.
 - Prefer extending an existing tool's fields over adding a near-duplicate tool.
 - Commit messages explain *why*, not *what* (the diff already shows what).
 
+## Releasing a version
+
+1. Add a `## X.Y.Z` section to [CHANGELOG.md](CHANGELOG.md), written for the people who use Pulse: it becomes the
+   GitHub release notes and the "What's new" list in the app's update banner.
+2. Set the version in `desktop/src-tauri/tauri.conf.json`, `desktop/src-tauri/Cargo.toml` (and the `pulse-desktop`
+   entry of `Cargo.lock`), `desktop/package.json`, `desktop/package-lock.json` and `pyproject.toml`; commit.
+3. `git tag vX.Y.Z && git push origin main vX.Y.Z`. The `installer` workflow builds the signed installer and
+   publishes the release with `latest.json`; installed apps then offer "Update now". It refuses a tag that does not
+   match `tauri.conf.json` or has no CHANGELOG section (`tests/test_release_notes.py` catches the latter earlier).
+
 ## Reporting a security issue
 
 See [SECURITY.md](SECURITY.md).

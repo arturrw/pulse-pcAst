@@ -269,6 +269,10 @@ Findings on 1440p, all-max as `base` (264 avg FPS, 1% low 92):
   are restored after every run. In the app (Games → the `tune…` batch) each step that helped gets an
   **Apply** button (with Undo), and the assistant can recommend and propose the best one. About 3 min per run (8 variants x 2 runs ≈ 50 min); do not use the PC meanwhile.
   `pulse session tune-plan` shows the steps without running anything.
+- **Where the worst 1% comes from**: a batch of 3+ runs also says whether its slowest 1% of frames come back at
+  the same places of the route in every run (the scene itself: no setting that leaves those parts as heavy will
+  help) or land at random (more likely a background program or the disk). Repeats are compared within one
+  variant, since FSR and the like move the slow places. On this PC every batch so far: 63-76% repeat.
 
 ## Chat tools
 The model answers only by calling read-only tools — full reference: **[API.md](API.md)**.

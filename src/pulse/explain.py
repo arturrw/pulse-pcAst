@@ -204,6 +204,25 @@ def variant_verdict(row: dict, ref: dict) -> dict:
     return {"verdict": "Better" if better else "Worse", "tone": "ok" if better else "bad", "text": text}
 
 
+def slow_spots_text(spots: dict | None) -> str | None:
+    """Plain words for games.slow_spots: are the worst 1% frames part of the route (the same places every run) or
+    scattered (more likely something else on the PC)."""
+    if not spots:
+        return None
+    where = ", ".join(f"{a}-{b + 1} s" if b > a else f"{a} s" for a, b in spots["stretches"][:4])
+    share = round(100 * spots["share"])
+    if spots["share"] >= 0.6:
+        return (f"The slowest 1% of frames come back at the same places of the route in most of the {spots['runs']} runs "
+                f"({share}% of them; mostly at {where} from the start): heavy parts of the scene, not something else on this PC. "
+                "A setting that does not speed those parts up will not raise the worst 1%.")
+    if spots["share"] < 0.3:
+        return (f"The slowest 1% of frames land in different places in each of the {spots['runs']} runs (only {share}% repeat): "
+                "something outside the game, such as a background program or the disk, is the more likely cause.")
+    return (f"The slowest 1% of frames are partly the same places of the route in every run ({share}%"
+            + (f", mostly at {where} from the start" if where else "") + ") and partly random: both the scene and something "
+            "else on the PC play a part.")
+
+
 BATCH_NOTE = "Each variant is the average of its repeats. Differences smaller than the spread between repeats are noise."
 
 

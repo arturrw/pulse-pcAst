@@ -636,6 +636,7 @@ function gamePage(out, game, recs, d) {
         const steps = d.variants.filter((v) => v.apply);   // settings that helped and that the app can set for you
         fill(host, h("div", { class: "vrow head" }, h("div", {}, "Variant"), h("div", {}, "Average FPS"), h("div", {}, "Worst 1% FPS"), h("div", {}, "Result")), rows,
           h("p", { class: "mute small" }, d.note),
+          d.slow_spots ? h("p", { class: "small" }, h("b", {}, "Worst 1% of frames: "), d.slow_spots) : null,
           steps.length ? h("div", {}, h("p", { class: "small" }, "These changes helped. Apply one to your CS2 settings (a backup is kept, so Undo brings yours back):"), steps.map((v) => cs2Card(v.apply))) : null,
           h("div", { class: "row" }, h("button", { onclick: () => singles.classList.toggle("open") }, "Show the " + b.runs.length + " single runs"), copyBtn, picBtn), singles);
       } catch (e) { fill(host, err(e)); }

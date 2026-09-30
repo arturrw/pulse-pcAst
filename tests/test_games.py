@@ -144,6 +144,27 @@ def test_compare_marks_better_and_worse():
     assert "repeat each setting" in text
 
 
+def test_slow_seconds_are_where_the_slowest_frames_are():
+    # 20 s at 4 ms, 2 s at 12 ms (more than 1% of the frames), 20 s at 4 ms: the slowest 1% are all in seconds 20-21
+    r = games.analyze(_write_pm([(20, 4, 3, 3), (2, 12, 3, 10), (20, 4, 3, 3)]))
+    assert set(r["slow_seconds"]) <= {20, 21}, r["slow_seconds"]
+
+
+def test_slow_spots_tell_the_scene_from_random_interference():
+    from pulse import explain
+    same = games.slow_spots({"base": [[20, 21, 22, 40], [20, 21, 22, 7]], "x": [[20, 21, 22, 55], [20, 21, 23]]})
+    assert same["runs"] == 4 and same["stretches"] == [(20, 22)] and same["share"] > 0.6
+    assert "same places of the route" in explain.slow_spots_text(same) and "20-23 s" in explain.slow_spots_text(same)
+    scattered = games.slow_spots({"base": [[3], [17], [42], [60]]})
+    assert scattered["share"] == 0 and "different places" in explain.slow_spots_text(scattered)
+    # a setting that moves the slow places (FSR) is compared with its own repeats, not with the others
+    moved = games.slow_spots({"base": [[20, 21], [20, 21]], "fsr": [[50], [50]]})
+    assert moved["share"] == 1.0
+    assert games.slow_spots({"base": [[20], [20]]}) is None                 # two runs cannot show a pattern
+    assert games.slow_spots({"a": [[1]], "b": [[2]], "c": [[3]]}) is None   # no variant was repeated
+    assert explain.slow_spots_text(None) is None
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

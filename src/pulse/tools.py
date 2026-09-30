@@ -288,7 +288,8 @@ def run_stats(name: str) -> dict:
     if key not in _stats_cache:
         from . import games
 
-        _stats_cache[key] = games.analyze(path)["frames"]
+        r = games.analyze(path)
+        _stats_cache[key] = {**r["frames"], "slow_seconds": r["slow_seconds"]}
     return _stats_cache[key]
 
 
@@ -450,6 +451,19 @@ def batch_variant_rows(runs: list[dict]) -> list[dict]:
     return rows
 
 
+def batch_slow_spots(runs: list[dict]) -> str | None:
+    """explain.slow_spots_text for benchmark runs of one batch (the same route), None with too few runs."""
+    from . import explain, games
+
+    groups: dict[str, list[list[int]]] = {}
+    for r in runs:
+        try:
+            groups.setdefault(r["variant"], []).append(run_stats(r["name"])["slow_seconds"])
+        except (OSError, ValueError):
+            continue
+    return explain.slow_spots_text(games.slow_spots(groups))
+
+
 def cs2_step(variant: str, current: dict) -> dict | None:
     """The one CS2 setting a benchmark variant changes, as a proposal against `current` (cs2settings.read_settings),
     or None when the variant changes several settings, one the app does not change, or nothing (already set)."""
@@ -472,7 +486,8 @@ def cs2_autotune_result() -> dict:
     for every step, the average and worst-1% FPS change against the user's settings, the verdict (Better / About
     the same / Worse; a change within the run-to-run noise is "About the same"), and `setting` - the key and value
     to pass to propose_cs2_setting to take that step, absent when the app cannot apply it or it is already set.
-    `available: false` means no auto-tune was run yet (scripts\\bench_autotune.ps1)."""
+    `slowest_frames` says whether the worst 1% of frames come back at the same places of the route in every run
+    (the scene itself) or land at random (something else on the PC). `available: false` means no auto-tune was run yet (scripts\\bench_autotune.ps1)."""
     from . import cs2settings
 
     runs = [r for r in game_sessions(1000) if "error" not in r and r.get("kind") == "benchmark run" and r.get("game", "").lower() == "cs2.exe"
@@ -495,7 +510,7 @@ def cs2_autotune_result() -> dict:
     ref = rows[0]
     return _round_deep({"available": True, "batch": batch, "recorded": min(r["recorded"] for r in runs),
                         "your_settings": {"avg_fps": ref["avg_fps"], "low1_fps": ref["low1_fps"], "runs": ref["runs"]},
-                        "steps": steps})
+                        "steps": steps, "slowest_frames": batch_slow_spots(runs)})
 
 
 def _recording_span(path: Path) -> tuple[float, float] | None:

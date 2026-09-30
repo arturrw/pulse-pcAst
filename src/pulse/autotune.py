@@ -52,7 +52,7 @@ def plan_from_game() -> list[str]:
 
 def report(paths, process: str | None = None, title: str = "Auto-tune") -> str:
     """The batch ranked by average FPS gain, then which steps are worth taking and which cost nothing to skip."""
-    from . import games
+    from . import explain, games
 
     rows = games.batch_rows(paths, process)
     if len(rows) < 2:
@@ -73,4 +73,13 @@ def report(paths, process: str | None = None, title: str = "Auto-tune") -> str:
     if same:
         out.append("Keep as they are (lowering gains nothing beyond the noise): " + ", ".join(r["label"] for r in same) + ".")
     out.append("Steps are measured one at a time; two worthwhile steps together usually gain a bit less than their sum.")
+    groups: dict[str, list[list[int]]] = {}
+    for p in paths:
+        try:
+            groups.setdefault(games.run_variant(p), []).append(games.analyze(p, process=process)["slow_seconds"])
+        except (OSError, ValueError):
+            continue                                      # an unreadable run is already left out of the table
+    spots = explain.slow_spots_text(games.slow_spots(groups))
+    if spots:
+        out += ["", spots]
     return "\n".join(out)

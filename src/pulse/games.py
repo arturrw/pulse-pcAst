@@ -143,6 +143,46 @@ def slice_fps(frames: list[dict], start: datetime, seconds: int = 10) -> list[fl
     return [1000 * n / ms for _, (n, ms) in sorted(n_ms.items())]
 
 
+def slow_seconds(frames: list[dict], start: datetime) -> list[int]:
+    """The seconds of the window (counted from its start) that hold the run's slowest 1% of frames."""
+    if not frames:
+        return []
+    slowest = sorted(frames, key=lambda f: f["ft"], reverse=True)[:max(1, len(frames) // 100)]   # exactly 1%, even with ties
+    return sorted({int((f["t"] - start).total_seconds()) for f in slowest})
+
+
+def slow_spots(groups: dict[str, list[list[int]]], min_runs: int = 3) -> dict | None:
+    """Whether the slowest frames of repeated runs of one route come back at the same places. `groups` maps each variant
+    to the slow_seconds of its runs: repeats are compared within a variant only, since a setting such as FSR moves the
+    slow places. A second is repeatable when it is slow in at least 3 of 4 runs of its variant; `share` is the part of all
+    slow seconds that are repeatable. None with fewer than `min_runs` runs in variants of 2+ runs: no pattern to show."""
+    groups = {v: [r for r in runs if r] for v, runs in groups.items()}
+    groups = {v: runs for v, runs in groups.items() if len(runs) >= 2}
+    runs_total = sum(len(runs) for runs in groups.values())
+    if runs_total < min_runs:
+        return None
+    hits = total = 0
+    repeat_in: dict[int, int] = defaultdict(int)          # in how many variants a second is repeatable
+    for runs in groups.values():
+        count: dict[int, int] = defaultdict(int)
+        for r in runs:
+            for sec in r:
+                count[sec] += 1
+        need = max(2, -(-3 * len(runs) // 4))
+        common = [sec for sec, n in count.items() if n >= need]
+        hits += sum(count[sec] for sec in common)
+        total += sum(count.values())
+        for sec in common:
+            repeat_in[sec] += 1
+    stretches = []
+    for sec in sorted(sec for sec, n in repeat_in.items() if 2 * n >= len(groups)):
+        if stretches and sec - stretches[-1][1] <= 3:      # join places a few seconds apart into one stretch
+            stretches[-1][1] = sec
+        else:
+            stretches.append([sec, sec])
+    return {"runs": runs_total, "share": hits / total if total else 0.0, "stretches": [tuple(x) for x in stretches]}
+
+
 def bottleneck(frames: list[dict]) -> dict | None:
     """Share of frames where the GPU / the CPU was busy for most of the frame time.
     None if PresentMon gave no busy times."""
@@ -267,6 +307,7 @@ def analyze(pm_csv, hml=None, process: str | None = None, start: datetime | time
         "time_offset_hours": offset_hours if samples else None,
         "frames": frame_stats(play),
         "slices": slice_fps(play, start),
+        "slow_seconds": slow_seconds(play, start),
         "bottleneck": bottleneck(play),
         "hitches": hitches(play, samples),
         "hardware": hw,

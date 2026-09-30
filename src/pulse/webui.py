@@ -350,7 +350,7 @@ class App:
                     r["apply"] = step
         title = f"{tools.game_title(game)} benchmark: {batch}"
         return {"batch": batch, "title": title, "reference": rows[0]["variant"], "variants": tools._round_deep(rows),
-                "recorded": min(r["recorded"] for r in runs), "note": explain.BATCH_NOTE,
+                "recorded": min(r["recorded"] for r in runs), "note": explain.BATCH_NOTE, "slow_spots": tools.batch_slow_spots(runs),
                 "markdown": explain.batch_markdown(title, rows)}
 
     def game_report(self, name) -> dict:

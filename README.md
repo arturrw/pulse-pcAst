@@ -250,14 +250,17 @@ Findings on 1440p, all-max as `base` (264 avg FPS, 1% low 92):
 
   Not measured: image quality (FSR softens the picture), CPU-limited scenes (this map is GPU-bound).
 
-- **Processor-heavy scene** (`-Scene bots`, not yet tried in the game): the workshop map is a camera
+- **Processor-heavy scene** (`-Scene bots`): the workshop map is a camera
   flight past *frozen* bots (its config sets `bot_stop 1`), so the processor spends ~1.3 ms per frame
   and the graphics card limits even the fastest variant. `-Scene bots` instead starts a local
   deathmatch on de_dust2 with 16 bots fighting and the spectator camera following the action, waits
-  30 s, measures 120 s and leaves. It hooks into the game's own override slot
+  30 s, measures 120 s, and the script closes the game. It hooks into the game's own override slot
   (`cfg/gamemode_deathmatch_server.cfg`, plus a timed `cfg/pulse_bots_timeline.cfg`); both files are
   marked and deleted after the run, and a file of that name you wrote yourself is never overwritten.
   Bots never fight the same way twice, so use `-Repeats 3` or more and trust the spread column.
+  Do not use the PC during a run: an unfocused game window gives "Composed" frames that are not
+  comparable, and the script prints a warning. First run (RTX 3070 Ti, 1440p, own settings): 321 FPS,
+  1% low 119, CPU 1.8 ms vs GPU 2.8 ms per frame — even with 16 bots the graphics card is the limit.
 
 ## Chat tools
 The model answers only by calling read-only tools — full reference: **[API.md](API.md)**.

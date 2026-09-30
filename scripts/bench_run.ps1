@@ -59,11 +59,14 @@ function Get-BotSceneFiles([string]$GameDir, [int]$Bots, [int]$WarmupSec, [int]$
         "sleep 8000",                             # the player is connected by now
         "jointeam 1", "spec_autodirector 1", "spec_mode 4",   # spectate: the camera follows whoever is fighting
         "cl_drawhud 0", "r_drawviewmodel 0", "fps_max 0",
+        "engine_no_focus_sleep 0",                # out of focus the game sleeps 20 ms a frame: 34 FPS instead of hundreds
         "sleep $($WarmupSec * 1000)",
-        "echo PULSE_BENCH_START",
+        # the markers go through chat: -condebug does not write echo output to console.log, chat lines it does
+        "say PULSE_BENCH_START",
         "sleep $($MeasureSec * 1000)",
-        "echo PULSE_BENCH_STOP",
-        "disconnect"                              # also makes the game print its VProf report
+        "say PULSE_BENCH_STOP",
+        "engine_no_focus_sleep 20"                # the game's default, in case it gets saved
+        # no disconnect: the game reloads the map after it (and runs this timeline again); the script closes the game
     )
     @(
         [pscustomobject]@{ Path = (Join-Path $cfg "gamemode_deathmatch_server.cfg"); Lines = $server },
@@ -113,7 +116,9 @@ if ($Scene -eq "bots") {
     Remove-BotSceneFiles $sceneFiles   # left over from a crashed run
     $foreign = @($sceneFiles | Where-Object { Test-Path $_.Path })
     if ($foreign) { Write-Host "$($foreign[0].Path) exists and was not written by this script: move it away first."; exit 1 }
-    $TimeoutMin = [Math]::Max($TimeoutMin, [Math]::Ceiling(($WarmupSec + $MeasureSec) / 60) + 4)
+    if (-not $PSBoundParameters.ContainsKey('TimeoutMin')) {   # a failed scene loops, so do not wait the default 10 min
+        $TimeoutMin = [Math]::Ceiling(($WarmupSec + $MeasureSec) / 60) + 4
+    }
     $startPattern, $stopPattern = "PULSE_BENCH_START", "PULSE_BENCH_STOP"
 } else {
     $startPattern, $stopPattern = "\[VProf\] VProfLite started", "\[VProf\] VProfLite stopped"
@@ -183,4 +188,9 @@ if ((Test-Path $csv) -and $stopLine -and $startLine) {
 }
 if (Test-Path $csv) {
     & $Python -m pulse session report $csv --process cs2.exe
+    # "Composed" present modes mean the game window was not in front (another window had focus): not comparable
+    $modes = Import-Csv $csv | Group-Object PresentMode | Sort-Object Count -Descending
+    if ($modes -and $modes[0].Name -like "Composed*") {
+        Write-Host "WARNING: most frames were '$($modes[0].Name)': the game was not the focused full-screen window. Do not use the PC during a run; this result is not comparable."
+    }
 }

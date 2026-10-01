@@ -194,11 +194,24 @@ def _print_tool(name: str, args: dict) -> None:
     print(f"  [tool] {name}({', '.join(f'{k}={v}' for k, v in args.items())})")
 
 
+def _language_note(messages: list) -> list:
+    """A reminder of the last user message's language, sent after everything else. Without it qwen3:8b answers in
+    the language of the earlier turns (a Russian question after an English one got an English answer)."""
+    text = next((m["content"] for m in reversed(messages) if isinstance(m, dict) and m.get("role") == "user"), "")
+    cyrillic, latin = len(re.findall(r"[а-яё]", text, re.I)), len(re.findall(r"[a-z]", text, re.I))
+    if not cyrillic and not latin:
+        return []
+    lang = "Russian" if cyrillic > latin else "English"
+    return [{"role": "system", "content": f"The user's last message is in {lang}: answer in {lang}, "
+                                          "whatever language the earlier messages or the tool results are in."}]
+
+
 def ask(client, model: str, messages: list, think: bool, num_ctx: int, on_tool=_print_tool) -> str:
     """Run one user turn (already appended to messages) to a final answer. `on_tool(name, args)` is told about every
     tool the model calls (the terminal prints it, the web app shows it next to the answer)."""
+    note = _language_note(messages)   # sent with every call, never kept in the history
     for _ in range(MAX_TOOL_ROUNDS):
-        resp = client.chat(model=model, messages=messages, tools=TOOLS, think=think,
+        resp = client.chat(model=model, messages=messages + note, tools=TOOLS, think=think,
                            options={"num_ctx": num_ctx})
         msg = resp.message
         messages.append(msg)

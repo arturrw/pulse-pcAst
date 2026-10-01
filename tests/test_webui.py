@@ -22,13 +22,15 @@ cs2settings.cs2_running = lambda: False
 
 class FakeClient:
     def __init__(self, models=("qwen3:8b",), answer="You have 42 GB free."):
-        self.models, self.answer, self.seen = models, answer, []
+        self.models, self.answer, self.seen, self.notes = models, answer, [], []
 
     def list(self):
         return SimpleNamespace(models=[SimpleNamespace(model=m) for m in self.models])
 
     def chat(self, model, messages, tools, think, options):
-        self.seen.append(len(messages))
+        *history, note = messages            # the last one is the reminder of the user's language
+        self.seen.append(len(history))
+        self.notes.append(note["content"])
         return SimpleNamespace(message=SimpleNamespace(content=self.answer, tool_calls=None))
 
 
@@ -706,6 +708,18 @@ def test_a_moment_during_a_game_says_so_instead_of_claiming_the_user_was_idle():
     finally:
         webui.report.state_anomalies = real
     assert p["during_game"] and "may just be the game" in p["question"] and "not doing anything" not in p["question"]
+
+
+def test_the_assistant_answers_in_the_language_of_the_last_message():
+    client = FakeClient()
+    s = Running(client=client)
+    try:
+        s.api("POST", "ask", {"message": "How much free space do I have?"})   # the app's English chip
+        s.api("POST", "ask", {"message": "какую настройку в CS2 понизить?"})
+        assert "is in English" in client.notes[0] and "is in Russian" in client.notes[1]
+        assert client.seen == [2, 4]                                       # the reminder is not kept in the history
+    finally:
+        s.stop()
 
 
 if __name__ == "__main__":

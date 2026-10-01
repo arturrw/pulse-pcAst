@@ -22,7 +22,7 @@ Docs: [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [Cha
 </p>
 <p>
   <img src="docs/screenshots/charts.jpg" width="49%" alt="Report charts: GPU temperature and CPU load over time">
-  <img src="docs/screenshots/game-benchmark.jpg" width="49%" alt="Game benchmark comparison: FPS, 1% low, hitches">
+  <img src="docs/screenshots/game-benchmark.jpg" width="49%" alt="CS2 page: auto-tune, latest recording (FPS, worst 1%, freezes), benchmark tests">
 </p>
 
 ## Status

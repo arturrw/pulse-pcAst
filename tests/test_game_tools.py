@@ -110,9 +110,8 @@ def test_autotune_result_ranks_steps_and_offers_only_what_the_app_can_still_set(
     assert steps["MSAA 2x"]["verdict"] == "Better" and steps["MSAA 2x"]["avg_fps_change_percent"] > 20
     assert steps["MSAA 2x"]["setting"] == {"key": "setting.msaa_samples", "value": "2", "from": "4x", "to": "2x"}
     assert steps["Ambient occlusion low"]["verdict"] == "About the same" and "setting" not in steps["Ambient occlusion low"]
-    assert r["recommendation"].startswith("With your settings CS2 runs at 250 FPS")
-    assert "MSAA 2x is worth it: +33% (about +83 FPS)." in r["recommendation"]
-    assert "FSR level 4 is worth it: +33% (about +83 FPS), but it is already set" in r["recommendation"]
+    assert "MSAA 2x is worth it: it takes you from 250 to about 333 FPS (+33%)." in r["recommendation"]
+    assert "FSR level 4 is worth it: it takes you from 250 to about 333 FPS (+33%), but it is already set" in r["recommendation"]
     assert "can stay as they are" in r["recommendation"]
     assert "setting" not in steps["FSR level 4"]                            # already the current value: nothing to apply
     assert [s["step"] for s in r["steps"]][-1] == "Ambient occlusion low"   # best gain first

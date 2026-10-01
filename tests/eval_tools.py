@@ -457,8 +457,11 @@ def autotune_answer(answer, results):
         return None
     if not r.get("available"):
         return None if re.search(r"auto-?tune|автотюн|автонастро|bench_autotune", answer, re.I) else "does not say that no auto-tune was run yet"
-    if str(round(r["your_settings"]["avg_fps"])) not in answer:
-        return f"does not give the current average FPS ({round(r['your_settings']['avg_fps'])})"
+    numbers = {str(round(r["your_settings"]["avg_fps"]))}   # the FPS now, or what the biggest step gains
+    if r["steps"] and r["steps"][0]["avg_fps_change_percent"]:
+        numbers.add(f"{abs(round(r['steps'][0]['avg_fps_change_percent']))}%")
+    if not any(n in answer.replace(" %", "%") for n in numbers):
+        return f"gives no numbers: neither the FPS now nor the biggest step's gain ({', '.join(sorted(numbers))})"
     better = [s for s in r["steps"] if s["verdict"] == "Better"]
     if better and str(abs(round(better[0]["avg_fps_change_percent"]))) not in answer:
         return f"does not give the FPS gain of the best step ({better[0]['step']})"
@@ -467,12 +470,12 @@ def autotune_answer(answer, results):
             return "proposed a setting change although no auto-tune step gained anything beyond the noise"
         if not NOTHING_TO_LOWER.search(answer):
             return "does not say that the current settings are already balanced (no step helped)"
-        if re.search(r"рассмотр|можно (?:снизить|понизить)|you (?:could|can|may) (?:lower|reduce)|consider", answer, re.I):
+        if re.search(r"рассмотр|(?<!которые )(?<!которую )можно (?:снизить|понизить)|you (?:could|can|may) (?:lower|reduce)|consider", answer, re.I):
             return "still suggests lowering settings although no step gained anything beyond the noise"
     return None
 
 
-NOTHING_TO_LOWER = re.compile(r"ни одн|ничего|не (?:стоит|нужно|имеет смысла|требует)|сбаланс|оставить|оставьте|"
+NOTHING_TO_LOWER = re.compile(r"ни одн|ничего|нет (?:настро|смысла)|не (?:стоит|нужно|имеет смысла|требует)|сбаланс|баланс|оставить|оставьте|"
                               r"nothing|no (?:step|setting)|none of|already (?:a good )?balanc|keep", re.I)
 
 

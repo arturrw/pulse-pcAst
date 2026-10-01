@@ -484,27 +484,28 @@ def cs2_step(variant: str, current: dict) -> dict | None:
 def _autotune_advice(ref: dict, steps: list[dict], slow_spots: str | None) -> str:
     """The auto-tune's conclusion in plain words, with the numbers a person cares about: the FPS now, what the best
     step gained in percent and in frames, and what that means."""
-    fps = lambda pct: ref["avg_fps"] * pct / 100
-    out = [f"With your settings CS2 runs at {ref['avg_fps']:.0f} FPS on average and {ref['low1_fps']:.0f} FPS in its "
-           "slowest 1% of moments."]
+    now = ref["avg_fps"]
+    to = lambda pct: f"from {now:.0f} to about {now * (1 + pct / 100):.0f} FPS ({pct:+.0f}%)"
+    out = []
     better = [s for s in steps if s["verdict"] == "Better"]
     if better:
         for s in better:
-            gain = s["avg_fps_change_percent"]
-            out.append(f"{s['step']} is worth it: {gain:+.0f}% (about {fps(gain):+.0f} FPS)"
+            out.append(f"{s['step']} is worth it: it takes you {to(s['avg_fps_change_percent'])}"
                        + ("." if "setting" in s else ", but it is already set or not something this app changes."))
         if len(better) < len(steps):
             out.append("The other steps made no difference you could notice, so those settings can stay as they are.")
     else:
         top = steps[0] if steps else None
         if top and (top["avg_fps_change_percent"] or 0) > 0:
-            gain = top["avg_fps_change_percent"]
-            out.append(f"Even the biggest step, {top['step']}, gained only {gain:+.0f}% (about {fps(gain):+.0f} FPS): "
-                       "too small to count as a real difference, and not something you would notice while playing.")
-        out.append("So there is nothing worth lowering: your settings are already a good balance of picture and speed.")
+            out.append(f"Nothing is worth lowering: even the biggest step, {top['step']}, only takes you "
+                       f"{to(top['avg_fps_change_percent'])}, too small to count as a real difference and not something "
+                       "you would notice while playing.")
+        else:
+            out.append(f"Nothing is worth lowering: no step raised your {now:.0f} FPS.")
+        out.append("Your settings are already a good balance of picture and speed.")
     if slow_spots and slow_spots.startswith("The slowest 1% of frames come back at the same places"):
-        out.append("The dips in the slowest 1% happen at the same heavy spots of the map every time, so no graphics "
-                   "setting removes them.")
+        out.append(f"The dips to {ref['low1_fps']:.0f} FPS in the slowest 1% happen at the same heavy spots of the "
+                   "map every time, so no graphics setting removes them.")
     return " ".join(out)
 
 
@@ -513,7 +514,8 @@ def cs2_autotune_result() -> dict:
     for every step, the average and worst-1% FPS change against the user's settings, the verdict (Better / About
     the same / Worse; a change within the run-to-run noise is "About the same"), and, only for a step that is
     "Better", `setting` - the key and value to pass to propose_cs2_setting. `recommendation` is the conclusion in
-    plain words, with the numbers: tell it in the user's language, in your own words, keeping its numbers. Never
+    plain words, with the numbers: tell it in the user's language, in your own words. Your answer must contain its
+    numbers: the user's FPS now (`your_settings.avg_fps`, e.g. "сейчас 323 FPS") and the best step's gain. Never
     suggest lowering a step that is not "Better", and propose only a "Better" step's `setting`.
     `available: false` means no auto-tune was run yet (scripts\\bench_autotune.ps1)."""
     from . import cs2settings

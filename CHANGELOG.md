@@ -6,8 +6,8 @@ one before its tag is pushed (the release is not published without it).
 
 ## 0.4.5
 
-- The assistant explains the auto-tune in plain words: your FPS now, what the best step would gain in percent and
-  in frames, and whether that is worth it. It no longer suggests lowering settings that gained nothing, and offers
+- The assistant explains the auto-tune in plain words, with the numbers: what the best step would gain and whether
+  that is worth it, and why the dips in the slowest 1% stay. It no longer suggests lowering settings that gained nothing, and offers
   the Apply button only for a step that clearly helped.
 - From the next update on, the update banner has a "What's new" button with a list like this one.
 

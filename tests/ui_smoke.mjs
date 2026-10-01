@@ -17,7 +17,8 @@ async function open(theme, width, height) {
   const p = port++;
   const chrome = spawn(CHROME, ["--headless=new", "--disable-gpu", "--no-sandbox", `--remote-debugging-port=${p}`, `--user-data-dir=${outDir}/profile-${p}`, "about:blank"], { stdio: "ignore" });
   let list;
-  for (let i = 0; i < 60; i++) { try { list = await (await fetch(`http://127.0.0.1:${p}/json`)).json(); if (list.length) break; } catch (e) {} await sleep(250); }
+  for (let i = 0; i < 240; i++) { try { list = await (await fetch(`http://127.0.0.1:${p}/json`)).json(); if (list.some((t) => t.type === "page")) break; } catch (e) {} await sleep(250); }
+  if (!list?.some((t) => t.type === "page")) { chrome.kill(); throw new Error(`Chrome did not open its debugging port ${p} within 60 s`); }   // a slow runner, not the app
   const ws = new WebSocket(list.find((t) => t.type === "page").webSocketDebuggerUrl);
   await new Promise((r) => (ws.onopen = r));
   let id = 0; const waiting = new Map(); const errors = [];
@@ -106,10 +107,14 @@ async function check(theme, width) {
     // CS2's page offers an auto-tune: what it would try (or why it cannot), never started by just opening the page
     await s.waitFor("[...document.querySelectorAll('#view h2')].some((e) => e.textContent === 'Auto-tune') && /Lowers each graphics setting/.test(document.querySelector('#view').textContent)", "the auto-tune card");
     await s.evalJs("[...document.querySelectorAll('.item.col .head')].find((h) => /variants? ·/.test(h.textContent)).click()");
-    await s.waitFor("document.querySelectorAll('.vrow:not(.head)').length >= 2", "the batch table");
-    const headHidden = await s.evalJs("getComputedStyle(document.querySelector('.vrow.head')).display === 'none'");
-    await s.evalJs("document.querySelector('.vrow:not(.head)').scrollIntoView({ block: 'center' })");   // the screenshot shows the table
+    await s.waitFor("document.querySelectorAll('.vrow:not(.vhead)').length >= 2", "the batch table");
+    const headHidden = await s.evalJs("getComputedStyle(document.querySelector('.vrow.vhead')).display === 'none'");
+    await s.evalJs("document.querySelector('.vrow:not(.vhead)').scrollIntoView({ block: 'center' })");   // the screenshot shows the table
     if ((width <= 640) !== headHidden) fail("games", `the column headings should be ${width <= 640 ? "hidden" : "shown"} at ${width}px`);
+    if (!headHidden) {   // each heading sits over its column (a stray display:flex once bunched them up on the left)
+      const off = await s.evalJs("(() => { const h = [...document.querySelector('.vrow.vhead').children], r = [...document.querySelector('.vrow:not(.vhead)').children]; return h.map((e, i) => Math.round(Math.abs(e.getBoundingClientRect().left - r[i].getBoundingClientRect().left))); })()");
+      if (off.some((d) => d > 2)) fail("games", "the column headings are not over their columns: " + JSON.stringify(off));
+    }
     // the batch can be copied as Markdown and drawn as a picture to share
     await s.evalJs("[...document.querySelectorAll('button')].find((b) => b.textContent === 'Copy as Markdown').click()");
     await s.waitFor("[...document.querySelectorAll('button')].some((b) => b.textContent === 'Copied')", "the copy button to confirm", 5000);

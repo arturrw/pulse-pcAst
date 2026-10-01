@@ -4,6 +4,11 @@ What changed in each version, in plain words. The section of a version becomes i
 the "What's new" list in the app's update banner, so write it for the person who uses Pulse. Every version needs
 one before its tag is pushed (the release is not published without it).
 
+## 0.4.6
+
+- The assistant answers in the language of your last message. Before, a Russian question asked after an English
+  one (for example after one of the suggestion buttons) could get an English answer.
+
 ## 0.4.5
 
 - The assistant explains the auto-tune in plain words, with the numbers: what the best step would gain and whether

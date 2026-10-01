@@ -52,9 +52,9 @@ iframe{display:block;width:100%;height:600px;border:0;background:transparent;opa
 .chatrow:hover{border-color:var(--acc)}.chatrow.on{border-color:var(--acc);background:var(--chip)}.chatrow .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .chatrow .x{border:0;background:none;padding:0 6px;color:var(--mute)}.chatrow .x:hover{color:var(--bad)}
 .vrow{display:grid;grid-template-columns:minmax(120px,1.2fr) 1fr 1fr minmax(130px,1.5fr);gap:2px 14px;padding:9px 0;border-bottom:1px solid var(--line);align-items:start}
-.vrow .lbl{display:none}.vrow.head{color:var(--mute);font-weight:500;font-size:13px;padding:6px 0}.vrow .txt{grid-column:1/-1}
+.vrow .lbl{display:none}.vrow.vhead{color:var(--mute);font-weight:500;font-size:13px;padding:6px 0}.vrow .txt{grid-column:1/-1}
 .progs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.progs button{font-size:13px}.progs button.on{border-color:var(--acc)}.addgame .row{margin:8px 0}
-@media (max-width:640px){.vrow{grid-template-columns:1fr 1fr}.vrow.head{display:none}.vrow .nm{order:1}.vrow .res{order:2;justify-self:end}.vrow .av{order:3}.vrow .lo{order:4}.vrow .txt{order:5}.vrow .lbl{display:block}}
+@media (max-width:640px){.vrow{grid-template-columns:1fr 1fr}.vrow.vhead{display:none}.vrow .nm{order:1}.vrow .res{order:2;justify-self:end}.vrow .av{order:3}.vrow .lo{order:4}.vrow .txt{order:5}.vrow .lbl{display:block}}
 .gamecard{cursor:pointer}.gamecard:hover{border-color:var(--acc)}.back{margin-bottom:6px}
 @media (max-width:700px){.sidebar{position:absolute;top:0;bottom:0;z-index:6;box-shadow:2px 0 16px rgba(0,0,0,.25)}.shell.collapsed .sidebar{box-shadow:none}.side-toggle{opacity:1}}
 @media (max-width:760px){.askwrap{grid-template-columns:1fr}.chats{position:static}}
@@ -672,7 +672,7 @@ function gamePage(out, game, recs, d) {
         const copyBtn = h("button", { onclick: () => copyText(d.markdown, copyBtn) }, "Copy as Markdown");
         const picBtn = h("button", { onclick: () => batchPicture(d).toBlob((blob) => blob && saveBlob(blob, "benchmark_" + b.tag + ".png")) }, "Save as picture");
         const steps = d.variants.filter((v) => v.apply);   // settings that helped and that the app can set for you
-        fill(host, h("div", { class: "vrow head" }, h("div", {}, "Variant"), h("div", {}, "Average FPS"), h("div", {}, "Worst 1% FPS"), h("div", {}, "Result")), rows,
+        fill(host, h("div", { class: "vrow vhead" }, h("div", {}, "Variant"), h("div", {}, "Average FPS"), h("div", {}, "Worst 1% FPS"), h("div", {}, "Result")), rows,
           h("p", { class: "mute small" }, d.note),
           d.slow_spots ? h("p", { class: "small" }, h("b", {}, "Worst 1% of frames: "), d.slow_spots) : null,
           steps.length ? h("div", {}, h("p", { class: "small" }, "These changes helped. Apply one to your CS2 settings (a backup is kept, so Undo brings yours back):"), steps.map((v) => cs2Card(v.apply))) : null,

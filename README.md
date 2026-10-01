@@ -3,13 +3,16 @@
 [![tests](https://github.com/arturrw/pulse-pcAst/actions/workflows/tests.yml/badge.svg)](https://github.com/arturrw/pulse-pcAst/actions/workflows/tests.yml)
 
 Local AI assistant for your own Windows PC. Everything runs on this machine (psutil + NVML, SQLite,
-Ollama); it only reads — writes nothing but its own files under `data/`.
+Ollama); it only reads and writes nothing but its own files, with one exception you trigger yourself: a CS2
+graphics setting you apply with a button (backed up first, one click to undo).
 
 - **Ask in plain language** (`pulse chat` / `pulse ui`): load, disk space and fill-up date, temperature
   history, heaviest processes, game FPS. The model only calls read-only tools; every number comes from them.
 - **Notices what's unusual** (`pulse alerts`): a hot GPU, a nearly full disk, an unusual RAM/temperature
   stretch, a process that stands out — as a Windows notification. Behavioral check, not an antivirus.
 - **One-page report** (`pulse report`) and **game benchmarks** (FPS, 1% lows, what limits the frame rate).
+- **CS2 auto-tune**: benchmarks every graphics setting one step lower than yours, unattended, and says
+  in plain words which ones are worth lowering (and when nothing is).
 
 Docs: [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [Chat tool API](API.md)
 
@@ -28,8 +31,17 @@ Docs: [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [Cha
 - [x] Disk-fill forecast (needs 24+ h of history)
 - [x] Statistical anomaly detection for state metrics
 - [x] HTML report + desktop-style dashboard (`pulse ui`) with a live "right now" row
+- [x] Windows installer with in-app updates ("Update now" banner with a "What's new" list)
+- [x] Game recording (PresentMon), unattended CS2 benchmark and auto-tune with Apply/Undo
 
-## Quick start
+## Install
+Download `Pulse_<version>_x64-setup.exe` from [Releases](https://github.com/arturrw/pulse-pcAst/releases/latest)
+and run it (per-user install, no administrator rights). You also need [Ollama](https://ollama.com) with
+`ollama pull qwen3:8b` for the assistant. Turn on background recording on the app's **Setup** page. When a new
+version is out, the app shows an **Update now** banner with what changed; the update is signed and installs in
+place, keeping your data (`%LOCALAPPDATA%\Pulse`).
+
+## Quick start (from source)
 1. Install Python 3.10+ and [Ollama](https://ollama.com), then `ollama pull qwen3:8b`.
 2. Set up the project:
    ```powershell
@@ -262,7 +274,7 @@ Findings on 1440p, all-max as `base` (264 avg FPS, 1% low 92):
   comparable, and the script prints a warning. First run (RTX 3070 Ti, 1440p, own settings): 321 FPS,
   1% low 119, CPU 1.8 ms vs GPU 2.8 ms per frame — even with 16 bots the graphics card is the limit.
 
-- **Auto-tune** (`powershell -File scriptsench_autotune.ps1 [-Repeats 2] [-Scene bots]`): reads your
+- **Auto-tune** (`powershell -File scripts\bench_autotune.ps1 [-Repeats 2] [-Scene bots]`): reads your
   current `cs2_video.txt`, lowers each setting one step (FSR, MSAA, shadows, dynamic shadows, AO, shaders,
   textures), benchmarks every step against your own settings and ranks them: what is worth lowering,
   and what gains nothing beyond the noise and can stay high. Nothing is applied by the runs; your settings
@@ -271,6 +283,8 @@ Findings on 1440p, all-max as `base` (264 avg FPS, 1% low 92):
   `pulse session tune-plan` shows the steps without running anything.
   In the app: Games → Counter-Strike 2 → **Start auto-tune** (runs the same script from the installed app, shows
   run N of M, and **Stop after this run** ends it cleanly - the run in progress still restores your settings).
+  <img src="docs/screenshots/autotune.jpg" width="70%" alt="Auto-tune result: every setting one step lower against your own, with a verdict per step">
+
 - **Where the worst 1% comes from**: a batch of 3+ runs also says whether its slowest 1% of frames come back at
   the same places of the route in every run (the scene itself: no setting that leaves those parts as heavy will
   help) or land at random (more likely a background program or the disk). Repeats are compared within one
